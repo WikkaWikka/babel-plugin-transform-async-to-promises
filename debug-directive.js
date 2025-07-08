@@ -1,7 +1,7 @@
 const babel = require('@babel/core');
 const plugin = require('./async-to-promises.js');
 
-const code = `"use tvui-async-await-runtime";`;
+const code = `"use transform-async-to-promises-runtime";`;
 
 const result = babel.transformSync(code, {
   plugins: [[plugin, { externalHelpers: 'global' }]],

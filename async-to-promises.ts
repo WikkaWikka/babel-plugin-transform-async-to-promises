@@ -4867,35 +4867,42 @@ export default function ({
 				},
 			},
 			Directive(path) {
-					const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
-				if (path.node.value.value === "use transform-async-to-promises-runtime" && externalHelpersMode === "global") {
-				console.error('shit')
-
+				const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
+				if (
+					path.node.value.value === "use transform-async-to-promises-runtime" &&
+					externalHelpersMode === "global"
+				) {
 					if (globalRuntimeState.runtimeDeclared) {
 						throw path.buildCodeFrameError(
 							`Cannot declare the transform-async-to-promises runtime more than once!`,
 							TypeError
 						);
 					}
-				console.error('shit')
 					initializeHelpers();
-						// This file declares the runtime - create the global helpers object
-						globalRuntimeState.runtimeDeclared = true;
-						path.replaceWith(helperAst);
-
-						// Create assignment to __GLOBAL_ASYNC_TO_PROMISES__
-						const assignment = types.expressionStatement(
-							types.assignmentExpression(
-								"=",
-								types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
-								types.identifier("AllHelpers")
-							)
-						);
-
-						const program = path.getFunctionParent() || path.scope.getProgramParent().path;
-						// Remove the directive and replace with AllHelpers declaration and assignment
-						(program as NodePath<Program>).pushContainer("body", [path.node, assignment]);
+					// This file declares the runtime - create the global helpers object
+					globalRuntimeState.runtimeDeclared = true;
+					const program = path.getFunctionParent() || path.scope.getProgramParent().path;
+					let nodePaths: NodePath<any> = path;
+					// insert the helpers into the node
+					for (const key in helpers) {
+						const helper = helpers[key];
+						nodePaths.insertAfter(helper.value);
+						nodePaths = nodePaths.getNextSibling();
 					}
+					path.remove();
+
+					// Create assignment to __GLOBAL_ASYNC_TO_PROMISES__
+					const assignment = types.expressionStatement(
+						types.assignmentExpression(
+							"=",
+							types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
+							types.identifier("AllHelpers")
+						)
+					);
+
+					// Remove the directive and replace with AllHelpers declaration and assignment
+					(program as NodePath<Program>).pushContainer("body", [assignment]);
+				}
 			},
 			ExportDeclaration: {
 				exit(path) {
@@ -4906,7 +4913,7 @@ export default function ({
 							TypeError
 						);
 					}
-						if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
+					if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
 						throw path.buildCodeFrameError(
 							`Cannot export after a top-level await when using topLevelAwait: "simple"!`,
 							TypeError

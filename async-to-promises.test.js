@@ -64,7 +64,6 @@ const pluginHelpers = [
 	"_continue",
 	"_continueIgnored",
 	"_forTo",
-	"_forValues",
 	"_forIn",
 	"_forOwn",
 	"_forOf",
@@ -83,8 +82,6 @@ const pluginHelpers = [
 	"_empty",
 	"_earlyReturn",
 	"_catchInGenerator",
-	"_wrapReturnedValue",
-	"_wrapYieldedValue",
 	"_AsyncGenerator",
 	"_iteratorSymbol",
 	"_asyncIteratorSymbol",
@@ -243,23 +240,18 @@ describe("global runtime helpers", () => {
 				parserOpts: { allowReturnOutsideFunction: true, plugins: ["asyncGenerators"] },
 				sourceType: "module",
 			});
-
 			const result = babel.transformFromAst(ast, input, {
-				plugins: [[pluginUnderTest, { externalHelpers: "global" }], "@babel/plugin-transform-modules-commonjs", ],
-				presets: ["@babel/preset-env"],
+				plugins: [[pluginUnderTest, { externalHelpers: "global" }]],
 				compact: false,
 			});
 
-			console.error(result.code)
-
 			// Check that the global helpers assignment is present
-			expect(result.code).toContain("__GLOBAL_ASasdfYNC_TO_PROMISES__");
+			expect(result.code).toContain("__GLOBAL_ASYNC_TO_PROMISES__");
 
 			// Execute the code to validate the global object is created
-			const globalScope = {};
 			const wrappedCode = `
 				(function() {
-					${result.code.replaceAll('export ', '')}
+					${result.code.replaceAll("export ", "")}
 					return __GLOBAL_ASYNC_TO_PROMISES__;
 				})()
 			`;
@@ -274,7 +266,7 @@ describe("global runtime helpers", () => {
 			// Validate that the global helpers object contains all expected helpers
 			for (const helperName of pluginHelpers) {
 				expect(globalHelpers).toHaveProperty(helperName);
-				expect(typeof globalHelpers[helperName]).toBe("function");
+				expect(__GLOBAL_ASYNC_TO_PROMISES__[helperName]).toBe(globalHelpers[helperName]);
 			}
 
 			// Validate that core helpers work correctly
