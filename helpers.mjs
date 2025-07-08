@@ -739,3 +739,50 @@ export const _AsyncGenerator = /*#__PURE__*/(function() {
 	
 	return _AsyncGenerator;
 })();
+
+// Promise.resolve helper
+export function _promiseResolve(value) {
+	return Promise.resolve(value);
+}
+
+// Promise.prototype.then helper
+export function _promiseThen(promise, onFulfilled, onRejected) {
+	return promise.then(onFulfilled, onRejected);
+}
+
+// used to define __GLOBAL_ASYNC_TO_PROMISES__ when externalHelpers is set to "global"
+export const AllHelpers = {
+	_Pact,
+	_settle,
+	_isSettledPact,
+	_async,
+	_await,
+	_awaitIgnored,
+	_continue,
+	_continueIgnored,
+	_forTo,
+	_forValues,
+	_forIn,
+	_forOwn,
+	_forOf,
+	_forAwaitOf,
+	_for,
+	_do,
+	_switch,
+	_call,
+	_callIgnored,
+	_invoke,
+	_invokeIgnored,
+	_catch,
+	_finallyRethrows,
+	_finally,
+	_rethrow,
+	_empty,
+	_earlyReturn,
+	_catchInGenerator,
+	_wrapReturnedValue,
+	_wrapYieldedValue,
+	_AsyncGenerator,
+	_iteratorSymbol,
+	_asyncIteratorSymbol,
+};

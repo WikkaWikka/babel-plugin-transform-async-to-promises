@@ -45,9 +45,16 @@ import { NodePath, Scope, Visitor } from "@babel/traverse";
 import { PluginObj } from "@babel/core";
 import { code as helperCode } from "./helpers-string";
 
+// Module-level state to track global helpers across all files
+const globalRuntimeState: {
+	runtimeDeclared: boolean;
+} = {
+	runtimeDeclared: false,
+};
+
 // Configuration types
 interface AsyncToPromisesConfiguration {
-	externalHelpers: boolean;
+	externalHelpers: boolean | "disabled" | "global" | "require";
 	hoist: boolean;
 	inlineHelpers: boolean;
 	minify: boolean;
@@ -56,7 +63,7 @@ interface AsyncToPromisesConfiguration {
 }
 
 const defaultConfigValues: AsyncToPromisesConfiguration = {
-	externalHelpers: false,
+	externalHelpers: "disabled",
 	hoist: false,
 	inlineHelpers: false,
 	minify: false,
@@ -75,6 +82,16 @@ function readConfigKey<K extends keyof AsyncToPromisesConfiguration>(
 		}
 	}
 	return defaultConfigValues[key];
+}
+
+function normalizeExternalHelpers(
+	value: boolean | "disabled" | "global" | "require"
+): "disabled" | "global" | "require" {
+	if (typeof value === "boolean") {
+		return value ? "require" : "disabled";
+	}
+
+	return value;
 }
 
 function discardingIntrinsics<T extends Node>(node: T | V8IntrinsicIdentifier): Exclude<T, V8IntrinsicIdentifier> {
@@ -290,7 +307,9 @@ type UsedHelpers = { [key in HelperName]: true };
 
 interface PluginState {
 	readonly opts: Partial<Readonly<AsyncToPromisesConfiguration>>;
+	globalHelpersIdentifier?: Identifier;
 	hasTopLevelAwait?: boolean;
+	isRuntimeDeclarationFile?: boolean;
 	usedHelpers?: UsedHelpers;
 }
 
@@ -343,6 +362,7 @@ interface Helper {
 	readonly dependencies: readonly HelperName[];
 }
 let helpers: { [name: string]: Helper } | undefined;
+let helperAst: Program;
 
 const alwaysTruthy = Object.keys(constantStaticMethods);
 const numberNames = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
@@ -1805,7 +1825,7 @@ export default function ({
 						if (
 							typeof ancestry[i].key === "number" &&
 							typeof referenceAncestry[i].key === "number" &&
-							ancestry[i].key < referenceAncestry[i].key
+							(ancestry[i].key as number) < (referenceAncestry[i].key as number)
 						) {
 							return false;
 						}
@@ -2462,7 +2482,7 @@ export default function ({
 		let resultIdentifier: Identifier | Pattern | undefined;
 		if (
 			!awaitPath.parentPath.isSequenceExpression() ||
-			!(awaitPath.key < (awaitPath.container as NodePath[]).length - 1)
+			!((awaitPath.key as number) < (awaitPath.container as NodePath[]).length - 1)
 		) {
 			const argument = originalAwaitPath.get("argument");
 			if (argument.isExpression()) {
@@ -3144,6 +3164,65 @@ export default function ({
 			current = current.parentPath;
 		}
 		return result;
+	}
+
+	// Initialize helpers from the helpers-string module
+	function initializeHelpers() {
+		if (helpers) {
+			return;
+		}
+
+		// Read helpers from ./helpers.js
+		const newHelpers: { [name: string]: Helper } = {};
+		const plugins = [
+			{
+				visitor: {
+					ExportNamedDeclaration(path) {
+						const declaration = path.get("declaration");
+						if (declaration.isFunctionDeclaration()) {
+							const id = declaration.node.id;
+							if (!types.isIdentifier(id)) {
+								throw declaration.buildCodeFrameError(`Expected a named declaration!`, TypeError);
+							}
+							newHelpers[id.name] = {
+								value: declaration.node,
+								dependencies: getHelperDependencies(declaration),
+							};
+							return;
+						}
+						if (declaration.isVariableDeclaration() && declaration.node.declarations.length === 1) {
+							const declaratorId = declaration.node.declarations[0].id;
+							if (types.isIdentifier(declaratorId)) {
+								newHelpers[declaratorId.name] = {
+									value: declaration.node,
+									dependencies: getHelperDependencies(declaration),
+								};
+								return;
+							}
+						}
+						/* istanbul ignore next */
+						throw path.buildCodeFrameError("Expected a named export from built-in helper!", TypeError);
+					},
+				} as Visitor,
+			},
+		];
+		helperAst = require(isNewBabel ? "@babel/core" : "babylon").parse(helperCode, {
+			sourceType: "module",
+			filename: "helpers.js",
+		});
+		if (isNewBabel) {
+			transformFromAst(helperAst, helperCode, {
+				babelrc: false,
+				configFile: false,
+				plugins,
+			});
+		} else {
+			transformFromAst(helperAst, helperCode, {
+				babelrc: false,
+				plugins,
+			});
+		}
+		helpers = newHelpers;
 	}
 
 	// Check if a path is a for-await statement (not supported on all Babel versions)
@@ -4092,7 +4171,8 @@ export default function ({
 		if ("file" in hub) {
 			return hub.file as HubFile;
 		}
-		throw path.buildCodeFrameError("Expected the path's hub to contain a file!", TypeError);
+		// Fallback for older Babel versions
+		return hub as HubFile;
 	}
 
 	// Visitor to extract dependencies from a helper function
@@ -4198,97 +4278,56 @@ export default function ({
 	}
 
 	// Emits a reference to a helper, inlining or importing it as necessary
-	function helperReference(state: PluginState, path: NodePath, name: HelperName): Identifier {
+	function helperReference(state: PluginState, path: NodePath, name: HelperName): Identifier | MemberExpression {
 		const file = getFile(path);
 		let result = file.declarations[name];
 		if (result) {
 			result = cloneNode(result);
 		} else {
-			result = file.declarations[name] = usesIdentifier(file.path, name)
-				? file.path.scope.generateUidIdentifier(name)
-				: types.identifier(name);
-			helperNameMap.set(result, name);
-			if (readConfigKey(state.opts, "externalHelpers")) {
-				/* istanbul ignore next */
-				file.path.unshiftContainer(
-					"body",
-					types.importDeclaration(
-						[types.importSpecifier(result, types.identifier(name))],
-						types.stringLiteral("babel-plugin-transform-async-to-promises/helpers")
-					)
-				);
+			const externalHelpersMode = normalizeExternalHelpers(readConfigKey(state.opts, "externalHelpers"));
+
+			if (externalHelpersMode === "global") {
+				// For global helpers, return a member expression accessing the global object
+				result = types.memberExpression(
+					types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
+					types.identifier(name)
+				) as any;
+				helperNameMap.set(result as any, name);
+				file.declarations[name] = result as any;
 			} else {
-				if (!helpers) {
-					// Read helpers from ./helpers.js
-					const newHelpers: { [name: string]: Helper } = {};
-					const plugins = [
-						{
-							visitor: {
-								ExportNamedDeclaration(path) {
-									const declaration = path.get("declaration");
-									if (declaration.isFunctionDeclaration()) {
-										const id = declaration.node.id;
-										if (!types.isIdentifier(id)) {
-											throw declaration.buildCodeFrameError(
-												`Expected a named declaration!`,
-												TypeError
-											);
-										}
-										newHelpers[id.name] = {
-											value: declaration.node,
-											dependencies: getHelperDependencies(declaration),
-										};
-										return;
-									}
-									if (
-										declaration.isVariableDeclaration() &&
-										declaration.node.declarations.length === 1
-									) {
-										const declaratorId = declaration.node.declarations[0].id;
-										if (types.isIdentifier(declaratorId)) {
-											newHelpers[declaratorId.name] = {
-												value: declaration.node,
-												dependencies: getHelperDependencies(declaration),
-											};
-											return;
-										}
-									}
-									/* istanbul ignore next */
-									throw path.buildCodeFrameError(
-										"Expected a named export from built-in helper!",
-										TypeError
-									);
-								},
-							} as Visitor,
-						},
-					];
-					const helperAst = require(isNewBabel ? "@babel/core" : "babylon").parse(helperCode, {
-						sourceType: "module",
-						filename: "helpers.js",
-					});
-					if (isNewBabel) {
-						transformFromAst(helperAst, helperCode, {
-							babelrc: false,
-							configFile: false,
-							plugins,
-						});
-					} else {
-						transformFromAst(helperAst, helperCode, {
-							babelrc: false,
-							plugins,
-						});
+				result = file.declarations[name] = usesIdentifier(file.path, name)
+					? file.path.scope.generateUidIdentifier(name)
+					: types.identifier(name);
+				helperNameMap.set(result, name);
+
+				if (externalHelpersMode === "require") {
+					/* istanbul ignore next */
+					file.path.unshiftContainer(
+						"body",
+						types.importDeclaration(
+							[types.importSpecifier(result, types.identifier(name))],
+							types.stringLiteral("babel-plugin-transform-async-to-promises/helpers")
+						)
+					);
+				} else {
+					// externalHelpersMode === 'disabled' - inline helpers
+					if (!helpers) {
+						initializeHelpers();
 					}
-					helpers = newHelpers;
+					if (!helpers || !helpers[name]) {
+						throw new Error(`Helper ${name} not found`);
+					}
+					const helper = helpers[name];
+					// Insert helper dependencies first
+					for (const dependency of helper.dependencies) {
+						helperReference(state, path, dependency);
+					}
+					const usedHelpers = state.usedHelpers || (state.usedHelpers = {} as UsedHelpers);
+					usedHelpers[name] = true;
 				}
-				const helper = helpers[name];
-				// Insert helper dependencies first
-				for (const dependency of helper.dependencies) {
-					helperReference(state, path, dependency);
-				}
-				const usedHelpers = state.usedHelpers || (state.usedHelpers = {} as UsedHelpers);
-				usedHelpers[name] = true;
 			}
 		}
+
 		return result;
 	}
 
@@ -4297,9 +4336,12 @@ export default function ({
 		state: PluginState,
 		path: NodePath
 	): Identifier | FunctionExpression | ArrowFunctionExpression {
+		const helperRef = helperReference(state, path, "_empty");
 		return readConfigKey(state.opts, "inlineHelpers")
 			? functionize(state, [], blockStatement([]), path)
-			: helperReference(state, path, "_empty");
+			: types.isIdentifier(helperRef)
+			? helperRef
+			: types.identifier("_empty");
 	}
 
 	// Emits a reference to Promise.resolve and tags it as an _await reference
@@ -4824,9 +4866,47 @@ export default function ({
 					}
 				},
 			},
+			Directive(path) {
+					const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
+				if (path.node.value.value === "use transform-async-to-promises-runtime" && externalHelpersMode === "global") {
+				console.error('shit')
+
+					if (globalRuntimeState.runtimeDeclared) {
+						throw path.buildCodeFrameError(
+							`Cannot declare the transform-async-to-promises runtime more than once!`,
+							TypeError
+						);
+					}
+				console.error('shit')
+					initializeHelpers();
+						// This file declares the runtime - create the global helpers object
+						globalRuntimeState.runtimeDeclared = true;
+						path.replaceWith(helperAst);
+
+						// Create assignment to __GLOBAL_ASYNC_TO_PROMISES__
+						const assignment = types.expressionStatement(
+							types.assignmentExpression(
+								"=",
+								types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
+								types.identifier("AllHelpers")
+							)
+						);
+
+						const program = path.getFunctionParent() || path.scope.getProgramParent().path;
+						// Remove the directive and replace with AllHelpers declaration and assignment
+						(program as NodePath<Program>).pushContainer("body", [path.node, assignment]);
+					}
+			},
 			ExportDeclaration: {
 				exit(path) {
-					if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
+					const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
+					if (!globalRuntimeState.runtimeDeclared && externalHelpersMode === "global") {
+						throw path.buildCodeFrameError(
+							`Cannot export when using externalHelpers: "global" without a transform-async-to-promises runtime directive somewhere in the program!`,
+							TypeError
+						);
+					}
+						if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
 						throw path.buildCodeFrameError(
 							`Cannot export after a top-level await when using topLevelAwait: "simple"!`,
 							TypeError
@@ -4875,15 +4955,21 @@ export default function ({
 						for (const helperName of Object.keys(usedHelpers)) {
 							const helper = helpers![helperName];
 							const value = cloneNode(helper.value) as typeof helper.value;
-							const newPath = insertHelper(file.path, value);
-							newPath.traverse({
-								Identifier(identifierPath) {
-									const name = identifierPath.node.name;
-									if (Object.hasOwnProperty.call(helpers, name)) {
-										identifierPath.replaceWith(file.declarations[name]);
-									}
-								},
-							} as Visitor);
+
+							const externalHelpersMode = normalizeExternalHelpers(
+								readConfigKey(this.opts, "externalHelpers")
+							);
+							if (externalHelpersMode !== "global") {
+								const newPath = insertHelper(file.path, value);
+								newPath.traverse({
+									Identifier(identifierPath) {
+										const name = identifierPath.node.name;
+										if (Object.hasOwnProperty.call(helpers, name)) {
+											identifierPath.replaceWith(file.declarations[name]);
+										}
+									},
+								} as Visitor);
+							}
 						}
 					}
 				},

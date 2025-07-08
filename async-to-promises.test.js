@@ -54,7 +54,7 @@ for (const environment of Object.values(environments)) {
 	environment.pluginUnderTest = asyncToPromises(environment.babel);
 }
 
-const helperNames = [
+const pluginHelpers = [
 	"_Pact",
 	"_settle",
 	"_isSettledPact",
@@ -88,6 +88,10 @@ const helperNames = [
 	"_AsyncGenerator",
 	"_iteratorSymbol",
 	"_asyncIteratorSymbol",
+];
+
+const helperNames = [
+	...pluginHelpers,
 	// babel's
 	"_classCallCheck",
 	"_defineProperties",
@@ -226,6 +230,68 @@ function readTest(name) {
 for (const { babel, parse } of Object.values(environments)) {
 	parse(babel, "let test;");
 }
+
+// Test for global runtime helpers
+describe("global runtime helpers", () => {
+	describe("babel 7", () => {
+		const { babel, types, pluginMapping } = environments["babel 7"];
+		const pluginUnderTest = environments["babel 7"].pluginUnderTest;
+
+		test("should generate complete global helpers object", () => {
+			const input = '"use transform-async-to-promises-runtime";';
+			const ast = babel.parse(input, {
+				parserOpts: { allowReturnOutsideFunction: true, plugins: ["asyncGenerators"] },
+				sourceType: "module",
+			});
+
+			const result = babel.transformFromAst(ast, input, {
+				plugins: [[pluginUnderTest, { externalHelpers: "global" }], "@babel/plugin-transform-modules-commonjs", ],
+				presets: ["@babel/preset-env"],
+				compact: false,
+			});
+
+			console.error(result.code)
+
+			// Check that the global helpers assignment is present
+			expect(result.code).toContain("__GLOBAL_ASasdfYNC_TO_PROMISES__");
+
+			// Execute the code to validate the global object is created
+			const globalScope = {};
+			const wrappedCode = `
+				(function() {
+					${result.code.replaceAll('export ', '')}
+					return __GLOBAL_ASYNC_TO_PROMISES__;
+				})()
+			`;
+
+			let globalHelpers;
+			try {
+				globalHelpers = eval(wrappedCode);
+			} catch (e) {
+				throw new Error(`Failed to execute generated code: ${e.message}\nCode: ${result.code}`);
+			}
+
+			// Validate that the global helpers object contains all expected helpers
+			for (const helperName of pluginHelpers) {
+				expect(globalHelpers).toHaveProperty(helperName);
+				expect(typeof globalHelpers[helperName]).toBe("function");
+			}
+
+			// Validate that core helpers work correctly
+			expect(typeof globalHelpers._async).toBe("function");
+			expect(typeof globalHelpers._await).toBe("function");
+			expect(typeof globalHelpers._continue).toBe("function");
+
+			// Test that _async helper works
+			const asyncFn = globalHelpers._async(() => Promise.resolve(42));
+			expect(typeof asyncFn).toBe("function");
+
+			return asyncFn().then((result) => {
+				expect(result).toBe(42);
+			});
+		});
+	});
+});
 
 for (const name of fs.readdirSync("tests").sort()) {
 	if (testsToRun.length && testsToRun.indexOf(name) === -1) {
