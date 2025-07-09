@@ -4,7 +4,7 @@ const fs = require("fs");
 const checkTestCases = true;
 const checkOutputMatches = true;
 const testsToRun = [];
-const shouldWriteOutput = false;
+const shouldWriteOutput = true;
 
 const runInlined = true;
 const runHoisted = true;
@@ -266,6 +266,16 @@ for (const name of fs.readdirSync("tests").sort()) {
 					});
 					const parseInput = module ? input : "return " + input;
 					const ast = parse(babel, parseInput);
+
+					function transformFromAst(addOptions = {}) {
+						return babel.transformFromAst(types.cloneDeep(ast), parseInput, {
+							presets,
+							plugins: mappedPlugins.concat([[pluginUnderTest, { ...addOptions, ...options }]]),
+							ast: true,
+							compact: true,
+						});
+					}
+
 					if (error) {
 						test("error", () => {
 							try {
@@ -282,32 +292,16 @@ for (const name of fs.readdirSync("tests").sort()) {
 						return;
 					}
 					const extractFunction = module ? extractOnlyUserCode : extractJustFunction;
-					const result = babel.transformFromAst(types.cloneDeep(ast), parseInput, {
-						presets,
-						plugins: mappedPlugins.concat([[pluginUnderTest, Object.assign({ target: "es6" }, options)]]),
-						compact: true,
-						ast: true,
-					});
+					const result = transformFromAst({ target: "es6" });
 					const strippedResult = extractFunction(babel, result);
 					if (runInlined) {
-						var inlinedResult = babel.transformFromAst(types.cloneDeep(ast), parseInput, {
-							presets,
-							plugins: mappedPlugins.concat([
-								[pluginUnderTest, Object.assign({ inlineHelpers: true }, options)],
-							]),
-							compact: true,
-							ast: true,
-						});
+						var inlinedResult = transformFromAst({ inlineHelpers: true });
 						var inlinedAndStrippedResult = extractFunction(babel, inlinedResult);
 					}
 					if (runHoisted) {
-						var hoistedResult = babel.transformFromAst(types.cloneDeep(ast), parseInput, {
-							presets,
-							plugins: mappedPlugins.concat([
-								[pluginUnderTest, Object.assign({ hoist: true, minify: true }, options)],
-							]),
-							compact: true,
-							ast: true,
+						var hoistedResult = transformFromAst({
+							hoist: true,
+							minify: true,
 						});
 						var hoistedAndStrippedResult = extractFunction(babel, hoistedResult);
 					}
