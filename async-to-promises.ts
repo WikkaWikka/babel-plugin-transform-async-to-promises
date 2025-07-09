@@ -71,6 +71,8 @@ const defaultConfigValues: AsyncToPromisesConfiguration = {
 	topLevelAwait: "disabled",
 } as const;
 
+const GLOBAL_IDENTIFIER = "__GLOBAL_ASYNC_TO_PROMISES__";
+
 function readConfigKey<K extends keyof AsyncToPromisesConfiguration>(
 	config: Partial<Readonly<AsyncToPromisesConfiguration>>,
 	key: K
@@ -4286,15 +4288,6 @@ export default function ({
 		} else {
 			const externalHelpersMode = normalizeExternalHelpers(readConfigKey(state.opts, "externalHelpers"));
 
-			if (externalHelpersMode === "global") {
-				// For global helpers, return a member expression accessing the global object
-				result = types.memberExpression(
-					types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
-					types.identifier(name)
-				) as any;
-				helperNameMap.set(result as any, name);
-				file.declarations[name] = result as any;
-			} else {
 				result = file.declarations[name] = usesIdentifier(file.path, name)
 					? file.path.scope.generateUidIdentifier(name)
 					: types.identifier(name);
@@ -4308,6 +4301,17 @@ export default function ({
 							[types.importSpecifier(result, types.identifier(name))],
 							types.stringLiteral("babel-plugin-transform-async-to-promises/helpers")
 						)
+					);
+				} else if (externalHelpersMode === "global") {
+					// add to the top the dereference of the global object, similar to the require case
+					file.path.unshiftContainer(
+						"body",
+						types.variableDeclaration("var", [
+							types.variableDeclarator(
+								types.identifier(name),
+								types.memberExpression(types.identifier(GLOBAL_IDENTIFIER), types.identifier(name))
+							),
+						])
 					);
 				} else {
 					// externalHelpersMode === 'disabled' - inline helpers
@@ -4325,7 +4329,6 @@ export default function ({
 					const usedHelpers = state.usedHelpers || (state.usedHelpers = {} as UsedHelpers);
 					usedHelpers[name] = true;
 				}
-			}
 		}
 
 		return result;
@@ -4335,11 +4338,11 @@ export default function ({
 	function emptyFunction(
 		state: PluginState,
 		path: NodePath
-	): Identifier | FunctionExpression | ArrowFunctionExpression {
+	): Identifier | FunctionExpression | ArrowFunctionExpression | MemberExpression {
 		const helperRef = helperReference(state, path, "_empty");
 		return readConfigKey(state.opts, "inlineHelpers")
 			? functionize(state, [], blockStatement([]), path)
-			: types.isIdentifier(helperRef)
+			: (types.isIdentifier(helperRef) || types.isMemberExpression(helperRef))
 			? helperRef
 			: types.identifier("_empty");
 	}
@@ -4881,7 +4884,6 @@ export default function ({
 					initializeHelpers();
 					// This file declares the runtime - create the global helpers object
 					globalRuntimeState.runtimeDeclared = true;
-					const program = path.getFunctionParent() || path.scope.getProgramParent().path;
 					let nodePaths: NodePath<any> = path;
 					// insert the helpers into the node
 					for (const key in helpers) {
@@ -4889,30 +4891,22 @@ export default function ({
 						nodePaths.insertAfter(helper.value);
 						nodePaths = nodePaths.getNextSibling();
 					}
-					path.remove();
 
-					// Create assignment to __GLOBAL_ASYNC_TO_PROMISES__
+					// Create assignment to 
 					const assignment = types.expressionStatement(
 						types.assignmentExpression(
 							"=",
-							types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
+							types.identifier(GLOBAL_IDENTIFIER),
 							types.identifier("AllHelpers")
 						)
 					);
-
 					// Remove the directive and replace with AllHelpers declaration and assignment
-					(program as NodePath<Program>).pushContainer("body", [assignment]);
+					nodePaths.insertAfter(assignment);
+					path.remove();
 				}
 			},
 			ExportDeclaration: {
 				exit(path) {
-					const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
-					if (!globalRuntimeState.runtimeDeclared && externalHelpersMode === "global") {
-						throw path.buildCodeFrameError(
-							`Cannot export when using externalHelpers: "global" without a transform-async-to-promises runtime directive somewhere in the program!`,
-							TypeError
-						);
-					}
 					if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
 						throw path.buildCodeFrameError(
 							`Cannot export after a top-level await when using topLevelAwait: "simple"!`,
