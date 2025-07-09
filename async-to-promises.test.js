@@ -270,7 +270,9 @@ for (const name of fs.readdirSync("tests").sort()) {
 					function transformFromAst(addOptions = {}) {
 						return babel.transformFromAst(types.cloneDeep(ast), parseInput, {
 							presets,
-							plugins: mappedPlugins.concat([[pluginUnderTest, { ...addOptions, ...options }]]),
+							plugins: mappedPlugins.concat([
+								[pluginUnderTest, { target: "es5", ...addOptions, ...options }],
+							]),
 							ast: true,
 							compact: true,
 						});
@@ -292,7 +294,7 @@ for (const name of fs.readdirSync("tests").sort()) {
 						return;
 					}
 					const extractFunction = module ? extractOnlyUserCode : extractJustFunction;
-					const result = transformFromAst({ target: "es6" });
+					const result = transformFromAst();
 					const strippedResult = extractFunction(babel, result);
 					if (runInlined) {
 						var inlinedResult = transformFromAst({ inlineHelpers: true });

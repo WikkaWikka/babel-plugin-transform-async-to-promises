@@ -1,1 +1,1 @@
-function(){return class{foo(baz){return _call(baz);}bar(baz){return _call(function(){return _await(baz());});}static foo(){return _await();}static bar(baz){return _call(baz);}};}
+output.js

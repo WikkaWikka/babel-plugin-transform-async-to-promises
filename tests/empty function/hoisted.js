@@ -1,1 +1,1 @@
-function(){return _await();}
+output.js

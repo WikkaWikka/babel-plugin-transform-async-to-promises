@@ -1,1 +1,1 @@
-(left,right)=>_call(left,_left=>_left&&right())
+function(left,right){return _call(left,function(_left){return _left&&right();});}

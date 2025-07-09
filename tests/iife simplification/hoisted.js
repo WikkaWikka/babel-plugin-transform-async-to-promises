@@ -1,1 +1,1 @@
-_async(function(){console.log('foo');})();
+output.js

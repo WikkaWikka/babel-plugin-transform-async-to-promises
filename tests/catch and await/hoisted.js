@@ -1,1 +1,1 @@
-_async(function(foo,bar){return _catch(foo,function(){return _callIgnored(bar);});})
+output.js

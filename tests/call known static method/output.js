@@ -1,1 +1,1 @@
-promisedData=>_await(promisedData,JSON.parse)
+function(promisedData){return _await(promisedData,JSON.parse);}

@@ -1,1 +1,1 @@
-_async((foo,bar,baz)=>foo()?bar():baz())
+_async(function(foo,bar,baz){return foo()?bar():baz();})

@@ -1,1 +1,1 @@
-function(foo){return _await(_catch(foo,_empty));}
+output.js

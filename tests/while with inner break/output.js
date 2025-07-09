@@ -1,1 +1,1 @@
-_async(()=>{let _interrupt=false;let result=0;return _continue(_for(()=>!_interrupt,void 0,()=>_continue(_catch(()=>_await(null,()=>{result=1;_interrupt=true;}),_empty),()=>{if(!_interrupt)result=2;})),()=>result);})
+_async(function(){let _interrupt=false;let result=0;return _continue(_for(function(){return!_interrupt;},void 0,function(){return _continue(_catch(function(){return _await(null,function(){result=1;_interrupt=true;});},_empty),function(){if(!_interrupt)result=2;});}),function(){return result;});})
