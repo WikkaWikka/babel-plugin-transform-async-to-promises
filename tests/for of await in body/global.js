@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(iter){var result=0;return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._forOf(iter,function(value){return __GLOBAL_ASYNC_TO_PROMISES__._await(value,function(_value){result+=_value;});}),function(){return result;});})

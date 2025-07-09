@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(left,right,two){const _two=two(),_left=left();return __GLOBAL_ASYNC_TO_PROMISES__._call(right,function(_right){return{zero:0,one:_left,[_two]:2,three:_right,four:4};});})

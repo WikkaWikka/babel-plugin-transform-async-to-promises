@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo){var keys=[];return __GLOBAL_ASYNC_TO_PROMISES__._call(foo,function(_foo){for(var key in _foo){keys.push(key);}return keys.sort();});})

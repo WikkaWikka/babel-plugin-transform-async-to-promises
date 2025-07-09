@@ -1,0 +1,1 @@
+function(value){const add=__GLOBAL_ASYNC_TO_PROMISES__._async(function(l,r){const _l=l();return __GLOBAL_ASYNC_TO_PROMISES__._await(r,function(_r){return _l+_r;});});return __GLOBAL_ASYNC_TO_PROMISES__._async(function(foo){return add(()=>1,foo);});}

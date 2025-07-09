@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(left,right){const _left=left();return __GLOBAL_ASYNC_TO_PROMISES__._call(right,function(_right){return[undefined|0,_left,[true,"",{foo:1}]&&2,_right,4];});})

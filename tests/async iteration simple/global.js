@@ -1,0 +1,1 @@
+function(){return new __GLOBAL_ASYNC_TO_PROMISES__._AsyncGenerator(function(_generator){return _generator._yield(0).then(function(){return _generator._yield(1).then(function(){return _generator._yield(2).then(__GLOBAL_ASYNC_TO_PROMISES__._empty);});});});}

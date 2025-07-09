@@ -1,0 +1,1 @@
+function(){return class{testThis(){const _this=this;return __GLOBAL_ASYNC_TO_PROMISES__._call(function(){return __GLOBAL_ASYNC_TO_PROMISES__._await(_this);});}testArguments(){const _arguments=arguments;return __GLOBAL_ASYNC_TO_PROMISES__._call(function(){return __GLOBAL_ASYNC_TO_PROMISES__._await(_arguments[0]);});}};}

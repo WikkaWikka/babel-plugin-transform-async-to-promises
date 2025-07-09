@@ -233,30 +233,28 @@ for (const { babel, parse } of Object.values(environments)) {
 	parse(babel, "let test;");
 }
 
-// Test for global runtime helpers
-describe("global runtime helpers", () => {
-	describe("babel 7", () => {
+for (const babelName of Object.keys(environments)) {
+	const { babel, parse, types, pluginUnderTest, pluginMapping, checkOutput } = environments[babelName];
+
+	const runtimeInput = '"use transform-async-to-promises-runtime";';
+	const ast = parse(babel, runtimeInput);
+	const globalRuntime = babel.transformFromAst(ast, runtimeInput, {
+		plugins: [[pluginUnderTest, { externalHelpers: "global" }]],
+		compact: false,
+	});
+	// Test for global runtime helpers
+	describe("global runtime helpers", () => {
 		const { babel, types, pluginMapping } = environments["babel 7"];
 		const pluginUnderTest = environments["babel 7"].pluginUnderTest;
 
 		test("should generate complete global helpers object", () => {
-			const input = '"use transform-async-to-promises-runtime";';
-			const ast = babel.parse(input, {
-				parserOpts: { allowReturnOutsideFunction: true, plugins: ["asyncGenerators"] },
-				sourceType: "module",
-			});
-			const result = babel.transformFromAst(ast, input, {
-				plugins: [[pluginUnderTest, { externalHelpers: "global" }]],
-				compact: false,
-			});
-
 			// Check that the global helpers assignment is present
-			expect(result.code).toContain("__GLOBAL_ASYNC_TO_PROMISES__");
+			expect(globalRuntime.code).toContain("__GLOBAL_ASYNC_TO_PROMISES__");
 
 			// Execute the code to validate the global object is created
 			const wrappedCode = `
 				(function() {
-					${result.code.replaceAll("export ", "")}
+					${globalRuntime.code}
 					return __GLOBAL_ASYNC_TO_PROMISES__;
 				})()
 			`;
@@ -265,7 +263,7 @@ describe("global runtime helpers", () => {
 			try {
 				globalHelpers = eval(wrappedCode);
 			} catch (e) {
-				throw new Error(`Failed to execute generated code: ${e.message}\nCode: ${result.code}`);
+				throw new Error(`Failed to execute generated code: ${e.message}\nCode: ${wrappedCode}`);
 			}
 
 			// Validate that the global helpers object contains all expected helpers
@@ -288,36 +286,39 @@ describe("global runtime helpers", () => {
 			});
 		});
 	});
-});
-
-for (const name of fs.readdirSync("tests").sort()) {
-	if (testsToRun.length && testsToRun.indexOf(name) === -1) {
-		continue;
-	}
-	if (fs.statSync(`tests/${name}`).isDirectory()) {
-		describe(name, () => {
-			const {
-				input,
-				output,
-				inlined,
-				hoisted,
-				global,
-				cases,
-				error,
-				checkSyntax,
-				module,
-				plugins,
-				presets,
-				supportedBabels,
-				options,
-			} = readTest(name);
-			for (const babelName of supportedBabels) {
-				if (!(babelName in environments)) {
-					continue;
+	for (const name of fs.readdirSync("tests").sort()) {
+		if (testsToRun.length && testsToRun.indexOf(name) === -1) {
+			continue;
+		}
+		if (fs.statSync(`tests/${name}`).isDirectory()) {
+			describe(name, () => {
+				const {
+					input,
+					output,
+					inlined,
+					hoisted,
+					global,
+					cases,
+					error,
+					checkSyntax,
+					module,
+					plugins,
+					presets,
+					supportedBabels,
+					options,
+				} = readTest(name);
+				if (!supportedBabels.includes(babelName)) {
+					return describe.skip(babelName, () => {
+						test("skipped", () => {
+							throw new Error(
+								`Test "${name}" is not supported in environment "${babelName}". Supported environments: ${supportedBabels.join(
+									", "
+								)}`
+							);
+						});
+					});
 				}
 				describe(babelName, () => {
-					const { babel, parse, types, pluginUnderTest, pluginMapping, checkOutput } =
-						environments[babelName];
 					const mappedPlugins = plugins.map((pluginName) => {
 						const mappedPlugin = pluginMapping[pluginName];
 						if (mappedPlugin) {
@@ -372,14 +373,7 @@ for (const name of fs.readdirSync("tests").sort()) {
 						var hoistedAndStrippedResult = extractFunction(babel, hoistedResult);
 					}
 					if (runGlobal) {
-						var globalResult = babel.transformFromAst(types.cloneDeep(ast), parseInput, {
-							presets,
-							plugins: mappedPlugins.concat([
-								[pluginUnderTest, Object.assign({externalHelpers: 'global', minify: true }, options)],
-							]),
-							compact: true,
-							ast: true,
-						});
+						var globalResult = transformFromAst({ externalHelpers: "global" });
 						var globalAndStrippedResult = extractFunction(babel, globalResult);
 					}
 					if (shouldWriteOutput && checkOutput) {
@@ -440,12 +434,13 @@ for (const name of fs.readdirSync("tests").sort()) {
 							if (runGlobal) {
 								test("global", () => {
 									const code = globalResult.code;
+									const combined = `/* ${name} global */
+											(function(exports){ ${globalRuntime.code} })({});
+											${code}`
 									try {
-										globalFn = new Function(`/* ${name} global */${code}`);
+										globalFn = new Function(combined);
 									} catch (e) {
-										if (e instanceof SyntaxError) {
-											e.message += "\n" + code;
-										}
+										e.message += "\n" + combined;
 										throw e;
 									}
 								});
@@ -508,19 +503,24 @@ for (const name of fs.readdirSync("tests").sort()) {
 											return cases[key](hoistedFn());
 										}
 									});
-					}
+								}
 								if (runGlobal) {
 									test("global", () => {
-										if (globalFn) {
-											return cases[key](globalFn());
+										try {
+											if (globalFn) {
+												return cases[key](globalFn());
+											}
+										} catch (e) {
+											e.message += "\n" + globalFn.toString();
+											throw e;
 										}
 									});
 								}
-				});
-			}
+							});
+						}
 					}
 				});
-			}
-		});
+			});
+		}
 	}
 }

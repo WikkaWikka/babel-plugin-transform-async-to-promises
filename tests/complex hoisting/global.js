@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,baz){var result;return __GLOBAL_ASYNC_TO_PROMISES__._invoke(function(){if(foo()){function bar(){return 1;}return __GLOBAL_ASYNC_TO_PROMISES__._call(bar,function(_bar){result=_bar;});}else{return __GLOBAL_ASYNC_TO_PROMISES__._call(baz,function(_baz){result=_baz;});}},function(){return result;});})

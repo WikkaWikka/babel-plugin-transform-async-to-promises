@@ -1,0 +1,1 @@
+const f=__GLOBAL_ASYNC_TO_PROMISES__._async(function(_arg){if(_arg===undefined)_arg=(x++,{});let{y=(z++,{})}=_arg;return __GLOBAL_ASYNC_TO_PROMISES__._await();});let x=0,z=0;

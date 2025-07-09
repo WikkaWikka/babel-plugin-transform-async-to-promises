@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(promisedData){return __GLOBAL_ASYNC_TO_PROMISES__._await(promisedData,JSON.parse);})

@@ -1,0 +1,1 @@
+function(value){const add=(l,r)=>l+r;return __GLOBAL_ASYNC_TO_PROMISES__._async(function(foo){return add(1,foo);});}

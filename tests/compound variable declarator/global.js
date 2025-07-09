@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,bar){var a=foo();return __GLOBAL_ASYNC_TO_PROMISES__._call(bar,function(b){var c=3;return a+b+c;});})

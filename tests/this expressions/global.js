@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(){const _this=this;const test=()=>_this;return __GLOBAL_ASYNC_TO_PROMISES__._await(_this.foo(),function(_this$foo){return __GLOBAL_ASYNC_TO_PROMISES__._await(_this.bar(),function(_this$bar){return _this$foo+_this$bar;});});})

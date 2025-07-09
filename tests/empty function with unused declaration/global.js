@@ -1,0 +1,1 @@
+function(){const unused=1;return __GLOBAL_ASYNC_TO_PROMISES__._await();}

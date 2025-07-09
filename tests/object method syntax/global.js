@@ -1,0 +1,1 @@
+function(){return{foo:__GLOBAL_ASYNC_TO_PROMISES__._async(function(bar){return bar();})};}

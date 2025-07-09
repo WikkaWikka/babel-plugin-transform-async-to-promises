@@ -4293,42 +4293,39 @@ export default function ({
 					: types.identifier(name);
 				helperNameMap.set(result, name);
 
-				if (externalHelpersMode === "require") {
-					/* istanbul ignore next */
-					file.path.unshiftContainer(
-						"body",
-						types.importDeclaration(
-							[types.importSpecifier(result, types.identifier(name))],
-							types.stringLiteral("babel-plugin-transform-async-to-promises/helpers")
-						)
-					);
-				} else if (externalHelpersMode === "global") {
-					// add to the top the dereference of the global object, similar to the require case
-					file.path.unshiftContainer(
-						"body",
-						types.variableDeclaration("var", [
-							types.variableDeclarator(
-								types.identifier(name),
-								types.memberExpression(types.identifier(GLOBAL_IDENTIFIER), types.identifier(name))
-							),
-						])
-					);
-				} else {
-					// externalHelpersMode === 'disabled' - inline helpers
-					if (!helpers) {
-						initializeHelpers();
-					}
-					if (!helpers || !helpers[name]) {
-						throw new Error(`Helper ${name} not found`);
-					}
-					const helper = helpers[name];
-					// Insert helper dependencies first
-					for (const dependency of helper.dependencies) {
-						helperReference(state, path, dependency);
-					}
-					const usedHelpers = state.usedHelpers || (state.usedHelpers = {} as UsedHelpers);
-					usedHelpers[name] = true;
+			if (externalHelpersMode === "require") {
+				/* istanbul ignore next */
+				file.path.unshiftContainer(
+					"body",
+					types.importDeclaration(
+						[types.importSpecifier(result, types.identifier(name))],
+						types.stringLiteral("babel-plugin-transform-async-to-promises/helpers")
+					)
+				);
+			} else if (externalHelpersMode === "global") {
+				// For global helpers, return a member expression accessing the global object
+				result = types.memberExpression(
+					types.identifier("__GLOBAL_ASYNC_TO_PROMISES__"),
+					types.identifier(name)
+				) as any;
+				helperNameMap.set(result as any, name);
+				file.declarations[name] = result as any;
+			} else {
+				// externalHelpersMode === 'disabled' - inline helpers
+				if (!helpers) {
+					initializeHelpers();
 				}
+				if (!helpers || !helpers[name]) {
+					throw new Error(`Helper ${name} not found`);
+				}
+				const helper = helpers[name];
+				// Insert helper dependencies first
+				for (const dependency of helper.dependencies) {
+					helperReference(state, path, dependency);
+				}
+				const usedHelpers = state.usedHelpers || (state.usedHelpers = {} as UsedHelpers);
+				usedHelpers[name] = true;
+			}
 		}
 
 		return result;
@@ -4342,7 +4339,7 @@ export default function ({
 		const helperRef = helperReference(state, path, "_empty");
 		return readConfigKey(state.opts, "inlineHelpers")
 			? functionize(state, [], blockStatement([]), path)
-			: (types.isIdentifier(helperRef) || types.isMemberExpression(helperRef))
+			: types.isIdentifier(helperRef) || types.isMemberExpression(helperRef)
 			? helperRef
 			: types.identifier("_empty");
 	}
@@ -4875,12 +4872,12 @@ export default function ({
 					path.node.value.value === "use transform-async-to-promises-runtime" &&
 					externalHelpersMode === "global"
 				) {
-					if (globalRuntimeState.runtimeDeclared) {
-						throw path.buildCodeFrameError(
-							`Cannot declare the transform-async-to-promises runtime more than once!`,
-							TypeError
-						);
-					}
+					// if (globalRuntimeState.runtimeDeclared) {
+					// 	throw path.buildCodeFrameError(
+					// 		`Cannot declare the transform-async-to-promises runtime more than once!`,
+					// 		TypeError
+					// 	);
+					// }
 					initializeHelpers();
 					// This file declares the runtime - create the global helpers object
 					globalRuntimeState.runtimeDeclared = true;
@@ -4892,7 +4889,7 @@ export default function ({
 						nodePaths = nodePaths.getNextSibling();
 					}
 
-					// Create assignment to 
+					// Create assignment to
 					const assignment = types.expressionStatement(
 						types.assignmentExpression(
 							"=",
@@ -5156,12 +5153,14 @@ export default function ({
 									);
 								}
 							} else {
+								// here
 								bodyPath.traverse(rewriteTopLevelReturnsVisitor);
 								path.replaceWith(
 									types.callExpression(helperReference(this, path, "_async"), [
 										functionize(this, path.node.params, bodyPath.node, path),
 									])
 								);
+								// here
 							}
 						} else {
 							if (!inlineHelpers) {

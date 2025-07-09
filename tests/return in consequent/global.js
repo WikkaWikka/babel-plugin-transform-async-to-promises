@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,bar){let _exit=false;return __GLOBAL_ASYNC_TO_PROMISES__._invoke(function(){if(foo){return __GLOBAL_ASYNC_TO_PROMISES__._call(bar,function(baz){if(baz){_exit=true;return baz;}});}},function(_result){return _exit?_result:0;});})

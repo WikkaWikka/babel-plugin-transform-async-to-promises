@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(value,log){return __GLOBAL_ASYNC_TO_PROMISES__._finallyRethrows(function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(value);},function(_wasThrown,_result){log("finished value(), might rethrow");return __GLOBAL_ASYNC_TO_PROMISES__._rethrow(_wasThrown,_result);});})

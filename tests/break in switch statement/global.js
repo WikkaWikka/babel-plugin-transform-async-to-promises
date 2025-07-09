@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(){return __GLOBAL_ASYNC_TO_PROMISES__._await(sleep(1000),function(){const errorCode=2;let message='Something wrong';switch(errorCode){case 2:message="Error 2";break;}for(;;){break;}alert(message);});})

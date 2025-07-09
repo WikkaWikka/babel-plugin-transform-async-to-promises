@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(value){return __GLOBAL_ASYNC_TO_PROMISES__._finally(function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(value);},function(){return"suppressed";});})
