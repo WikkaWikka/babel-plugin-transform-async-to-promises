@@ -8,6 +8,7 @@ const shouldWriteOutput = true;
 
 const runInlined = true;
 const runHoisted = true;
+const runGlobal = true;
 
 const environments = {
 	"babel 6": {
@@ -174,6 +175,7 @@ function readTest(name) {
 	let output;
 	let inlined;
 	let hoisted;
+	let global;
 	let optionsJSON;
 	const cases = Object.create(null);
 	for (const fileName of fs.readdirSync(`tests/${name}`)) {
@@ -186,6 +188,8 @@ function readTest(name) {
 			inlined = content;
 		} else if (fileName === "hoisted.js") {
 			hoisted = content;
+		} else if (fileName === "global.js") {
+			global = content;
 		} else if (fileName === "options.json") {
 			try {
 				optionsJSON = JSON.parse(content);
@@ -216,6 +220,7 @@ function readTest(name) {
 		output,
 		inlined,
 		hoisted,
+		global,
 		cases,
 		plugins,
 		supportedBabels,
@@ -296,6 +301,7 @@ for (const name of fs.readdirSync("tests").sort()) {
 				output,
 				inlined,
 				hoisted,
+				global,
 				cases,
 				error,
 				checkSyntax,
@@ -365,6 +371,17 @@ for (const name of fs.readdirSync("tests").sort()) {
 						});
 						var hoistedAndStrippedResult = extractFunction(babel, hoistedResult);
 					}
+					if (runGlobal) {
+						var globalResult = babel.transformFromAst(types.cloneDeep(ast), parseInput, {
+							presets,
+							plugins: mappedPlugins.concat([
+								[pluginUnderTest, Object.assign({externalHelpers: 'global', minify: true }, options)],
+							]),
+							compact: true,
+							ast: true,
+						});
+						var globalAndStrippedResult = extractFunction(babel, globalResult);
+					}
 					if (shouldWriteOutput && checkOutput) {
 						writeOutput(`tests/${name}/output.js`, strippedResult);
 						if (runInlined) {
@@ -373,8 +390,11 @@ for (const name of fs.readdirSync("tests").sort()) {
 						if (runHoisted) {
 							writeOutput(`tests/${name}/hoisted.js`, hoistedAndStrippedResult, strippedResult);
 						}
+						if (runGlobal) {
+							writeOutput(`tests/${name}/global.js`, globalAndStrippedResult, strippedResult);
+						}
 					}
-					let fn, rewrittenFn, inlinedFn, hoistedFn;
+					let fn, rewrittenFn, inlinedFn, hoistedFn, globalFn;
 					try {
 						fn = new Function(`/* ${name} original */${parseInput}`);
 					} catch (e) {}
@@ -417,6 +437,19 @@ for (const name of fs.readdirSync("tests").sort()) {
 									}
 								});
 							}
+							if (runGlobal) {
+								test("global", () => {
+									const code = globalResult.code;
+									try {
+										globalFn = new Function(`/* ${name} global */${code}`);
+									} catch (e) {
+										if (e instanceof SyntaxError) {
+											e.message += "\n" + code;
+										}
+										throw e;
+									}
+								});
+							}
 						});
 					}
 					if (checkOutputMatches && checkOutput) {
@@ -436,6 +469,13 @@ for (const name of fs.readdirSync("tests").sort()) {
 									test("hoisted", () => {
 										expect(hoistedAndStrippedResult).toBe(
 											typeof hoisted !== "undefined" ? hoisted : output
+										);
+									});
+								}
+								if (runGlobal) {
+									test("global", () => {
+										expect(globalAndStrippedResult).toBe(
+											typeof global !== "undefined" ? global : output
 										);
 									});
 								}
@@ -468,9 +508,16 @@ for (const name of fs.readdirSync("tests").sort()) {
 											return cases[key](hoistedFn());
 										}
 									});
+					}
+								if (runGlobal) {
+									test("global", () => {
+										if (globalFn) {
+											return cases[key](globalFn());
+										}
+									});
 								}
-							});
-						}
+				});
+			}
 					}
 				});
 			}
