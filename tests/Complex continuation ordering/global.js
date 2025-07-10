@@ -1,0 +1,3 @@
+()=>{const test=__GLOBAL_ASYNC_TO_PROMISES__._async(function(){let promiseResolve;let num=++index;messages.push("start "+num);// place of interest
+// place of interest
+return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._for(function(){return!!promise;},void 0,function(){messages.push("wait "+num);return __GLOBAL_ASYNC_TO_PROMISES__._await(promise,__GLOBAL_ASYNC_TO_PROMISES__._empty);}),function(){promise=new Promise(r=>{promiseResolve=r;});return __GLOBAL_ASYNC_TO_PROMISES__._call(wait,function(){promise=null;promiseResolve();messages.push("stop "+num);});});});let index=0;let promise=null;let messages=[];function wait(){return Promise.resolve();}return Promise.all([test(),test(),test()]).then(()=>messages);}

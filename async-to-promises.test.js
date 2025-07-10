@@ -8,6 +8,7 @@ const shouldWriteOutput = false;
 
 const runInlined = true;
 const runHoisted = true;
+const runGlobal = true;
 
 const environments = {
 	"babel 6": {
@@ -54,7 +55,7 @@ for (const environment of Object.values(environments)) {
 	environment.pluginUnderTest = asyncToPromises(environment.babel);
 }
 
-const helperNames = [
+const pluginHelpers = [
 	"_Pact",
 	"_settle",
 	"_isSettledPact",
@@ -64,7 +65,6 @@ const helperNames = [
 	"_continue",
 	"_continueIgnored",
 	"_forTo",
-	"_forValues",
 	"_forIn",
 	"_forOwn",
 	"_forOf",
@@ -83,11 +83,13 @@ const helperNames = [
 	"_empty",
 	"_earlyReturn",
 	"_catchInGenerator",
-	"_wrapReturnedValue",
-	"_wrapYieldedValue",
 	"_AsyncGenerator",
 	"_iteratorSymbol",
 	"_asyncIteratorSymbol",
+];
+
+const helperNames = [
+	...pluginHelpers,
 	// babel's
 	"_classCallCheck",
 	"_defineProperties",
@@ -173,6 +175,7 @@ function readTest(name) {
 	let output;
 	let inlined;
 	let hoisted;
+	let global;
 	let optionsJSON;
 	const cases = Object.create(null);
 	for (const fileName of fs.readdirSync(`tests/${name}`)) {
@@ -185,6 +188,8 @@ function readTest(name) {
 			inlined = content;
 		} else if (fileName === "hoisted.js") {
 			hoisted = content;
+		} else if (fileName === "global.js") {
+			global = content;
 		} else if (fileName === "options.json") {
 			try {
 				optionsJSON = JSON.parse(content);
@@ -215,6 +220,7 @@ function readTest(name) {
 		output,
 		inlined,
 		hoisted,
+		global,
 		cases,
 		plugins,
 		supportedBabels,
@@ -227,33 +233,92 @@ for (const { babel, parse } of Object.values(environments)) {
 	parse(babel, "let test;");
 }
 
-for (const name of fs.readdirSync("tests").sort()) {
-	if (testsToRun.length && testsToRun.indexOf(name) === -1) {
-		continue;
-	}
-	if (fs.statSync(`tests/${name}`).isDirectory()) {
-		describe(name, () => {
-			const {
-				input,
-				output,
-				inlined,
-				hoisted,
-				cases,
-				error,
-				checkSyntax,
-				module,
-				plugins,
-				presets,
-				supportedBabels,
-				options,
-			} = readTest(name);
-			for (const babelName of supportedBabels) {
-				if (!(babelName in environments)) {
-					continue;
+for (const babelName of Object.keys(environments)) {
+	const { babel, parse, types, pluginUnderTest, pluginMapping, checkOutput } = environments[babelName];
+
+	const runtimeInput = '"use transform-async-to-promises-runtime";';
+	const ast = parse(babel, runtimeInput);
+	const globalRuntime = babel.transformFromAst(ast, runtimeInput, {
+		plugins: [[pluginUnderTest, { externalHelpers: "global" }]],
+		compact: false,
+	});
+	// Test for global runtime helpers
+	describe("global runtime helpers", () => {
+		const { babel, types, pluginMapping } = environments["babel 7"];
+		const pluginUnderTest = environments["babel 7"].pluginUnderTest;
+
+		test("should generate complete global helpers object", () => {
+			// Check that the global helpers assignment is present
+			expect(globalRuntime.code).toContain("__GLOBAL_ASYNC_TO_PROMISES__");
+
+			// Execute the code to validate the global object is created
+			const wrappedCode = `
+				(function() {
+					${globalRuntime.code}
+					return __GLOBAL_ASYNC_TO_PROMISES__;
+				})()
+			`;
+
+			let globalHelpers;
+			try {
+				globalHelpers = eval(wrappedCode);
+			} catch (e) {
+				throw new Error(`Failed to execute generated code: ${e.message}\nCode: ${wrappedCode}`);
+			}
+
+			// Validate that the global helpers object contains all expected helpers
+			for (const helperName of pluginHelpers) {
+				expect(globalHelpers).toHaveProperty(helperName);
+				expect(__GLOBAL_ASYNC_TO_PROMISES__[helperName]).toBe(globalHelpers[helperName]);
+			}
+
+			// Validate that core helpers work correctly
+			expect(typeof globalHelpers._async).toBe("function");
+			expect(typeof globalHelpers._await).toBe("function");
+			expect(typeof globalHelpers._continue).toBe("function");
+
+			// Test that _async helper works
+			const asyncFn = globalHelpers._async(() => Promise.resolve(42));
+			expect(typeof asyncFn).toBe("function");
+
+			return asyncFn().then((result) => {
+				expect(result).toBe(42);
+			});
+		});
+	});
+	for (const name of fs.readdirSync("tests").sort()) {
+		if (testsToRun.length && testsToRun.indexOf(name) === -1) {
+			continue;
+		}
+		if (fs.statSync(`tests/${name}`).isDirectory()) {
+			describe(name, () => {
+				const {
+					input,
+					output,
+					inlined,
+					hoisted,
+					global,
+					cases,
+					error,
+					checkSyntax,
+					module,
+					plugins,
+					presets,
+					supportedBabels,
+					options,
+				} = readTest(name);
+				if (!supportedBabels.includes(babelName)) {
+					return describe.skip(babelName, () => {
+						test("skipped", () => {
+							throw new Error(
+								`Test "${name}" is not supported in environment "${babelName}". Supported environments: ${supportedBabels.join(
+									", "
+								)}`
+							);
+						});
+					});
 				}
 				describe(babelName, () => {
-					const { babel, parse, types, pluginUnderTest, pluginMapping, checkOutput } =
-						environments[babelName];
 					const mappedPlugins = plugins.map((pluginName) => {
 						const mappedPlugin = pluginMapping[pluginName];
 						if (mappedPlugin) {
@@ -307,6 +372,10 @@ for (const name of fs.readdirSync("tests").sort()) {
 						});
 						var hoistedAndStrippedResult = extractFunction(babel, hoistedResult);
 					}
+					if (runGlobal) {
+						var globalResult = transformFromAst({ externalHelpers: "global" });
+						var globalAndStrippedResult = extractFunction(babel, globalResult);
+					}
 					if (shouldWriteOutput && checkOutput) {
 						writeOutput(`tests/${name}/output.js`, strippedResult);
 						if (runInlined) {
@@ -315,8 +384,11 @@ for (const name of fs.readdirSync("tests").sort()) {
 						if (runHoisted) {
 							writeOutput(`tests/${name}/hoisted.js`, hoistedAndStrippedResult, strippedResult);
 						}
+						if (runGlobal) {
+							writeOutput(`tests/${name}/global.js`, globalAndStrippedResult, strippedResult);
+						}
 					}
-					let fn, rewrittenFn, inlinedFn, hoistedFn;
+					let fn, rewrittenFn, inlinedFn, hoistedFn, globalFn;
 					try {
 						fn = new Function(`/* ${name} original */${parseInput}`);
 					} catch (e) {}
@@ -359,6 +431,20 @@ for (const name of fs.readdirSync("tests").sort()) {
 									}
 								});
 							}
+							if (runGlobal) {
+								test("global", () => {
+									const code = globalResult.code;
+									const combined = `/* ${name} global */
+											(function(exports){ ${globalRuntime.code} })({});
+											${code}`
+									try {
+										globalFn = new Function(combined);
+									} catch (e) {
+										e.message += "\n" + combined;
+										throw e;
+									}
+								});
+							}
 						});
 					}
 					if (checkOutputMatches && checkOutput) {
@@ -378,6 +464,13 @@ for (const name of fs.readdirSync("tests").sort()) {
 									test("hoisted", () => {
 										expect(hoistedAndStrippedResult).toBe(
 											typeof hoisted !== "undefined" ? hoisted : output
+										);
+									});
+								}
+								if (runGlobal) {
+									test("global", () => {
+										expect(globalAndStrippedResult).toBe(
+											typeof global !== "undefined" ? global : output
 										);
 									});
 								}
@@ -411,11 +504,23 @@ for (const name of fs.readdirSync("tests").sort()) {
 										}
 									});
 								}
+								if (runGlobal) {
+									test("global", () => {
+										try {
+											if (globalFn) {
+												return cases[key](globalFn());
+											}
+										} catch (e) {
+											e.message += "\n" + globalFn.toString();
+											throw e;
+										}
+									});
+								}
 							});
 						}
 					}
 				});
-			}
-		});
+			});
+		}
 	}
 }

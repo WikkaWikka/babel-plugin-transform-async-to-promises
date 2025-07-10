@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(a,b,c){const _GLOBAL_ASYNC_TO_PRO=__GLOBAL_ASYNC_TO_PROMISES__,_temp2=_GLOBAL_ASYNC_TO_PRO._await,_temp=b()+1;return __GLOBAL_ASYNC_TO_PROMISES__._call(c,function(_c){return _temp2.call(_GLOBAL_ASYNC_TO_PRO,a(1,_temp,_c));});})

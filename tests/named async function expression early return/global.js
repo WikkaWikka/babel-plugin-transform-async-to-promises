@@ -1,0 +1,1 @@
+const foo=function _foo(arg){try{if(arg.length===0){return __GLOBAL_ASYNC_TO_PROMISES__._await();}return __GLOBAL_ASYNC_TO_PROMISES__._await();}catch(e){return Promise.reject(e);}};

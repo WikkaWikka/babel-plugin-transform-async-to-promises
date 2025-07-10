@@ -1,0 +1,1 @@
+export const foo=__GLOBAL_ASYNC_TO_PROMISES__._async(function(){return Promise.resolve(true);});foo();let dummy;

@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,bar){switch(foo()){case 1:return __GLOBAL_ASYNC_TO_PROMISES__._call(bar,function(result){return result||null;});default:return false;}})

@@ -1,0 +1,1 @@
+const fun=__GLOBAL_ASYNC_TO_PROMISES__._async(function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(wait,function(){return true;});});return fun();function wait(){return Promise.resolve();}var dummy

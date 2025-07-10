@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(left,right){if(true){const _left=left();return _left&&right();}else return false;})

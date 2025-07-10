@@ -1,0 +1,1 @@
+/*#__PURE__*/function(){function TestClass(){_classCallCheck(this,TestClass);}_createClass(TestClass,[{key:"testMe",value:function testMe(enabled){try{if(!enabled){return __GLOBAL_ASYNC_TO_PROMISES__._await();}return __GLOBAL_ASYNC_TO_PROMISES__._call(doIt,__GLOBAL_ASYNC_TO_PROMISES__._empty);}catch(e){return Promise.reject(e);}}}]);return TestClass;}()

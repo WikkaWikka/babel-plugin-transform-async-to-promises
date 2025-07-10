@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(test1,function(r){switch(r){case"1":console.log("1111");break;case"2":console.log("2222");break;}console.log("33333333333");});})

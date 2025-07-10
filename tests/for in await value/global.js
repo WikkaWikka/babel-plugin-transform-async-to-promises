@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo){var values=[];return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._forIn(foo,function(key){const _push=values.push;return __GLOBAL_ASYNC_TO_PROMISES__._await(foo[key](),function(_foo$key){_push.call(values,_foo$key);});}),function(){return values.sort();});})

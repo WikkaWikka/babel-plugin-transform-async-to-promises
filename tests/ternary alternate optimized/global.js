@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,bar,baz){const _foo=foo();return _foo?bar():baz();})

@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(left,right){if(true){const _left=left();return __GLOBAL_ASYNC_TO_PROMISES__._call(right,function(_right){return _left+_right;});}else return false;})

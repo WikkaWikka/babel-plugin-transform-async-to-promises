@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(){const _arguments=arguments;var result=false;return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._forTo(_arguments,function(i){return __GLOBAL_ASYNC_TO_PROMISES__._await(_arguments[i](),function(_arguments$i){if(_arguments$i)result=true;});}),function(){return result;});})

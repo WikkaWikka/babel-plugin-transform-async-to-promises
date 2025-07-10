@@ -1,0 +1,1 @@
+class{sequence(until){return new __GLOBAL_ASYNC_TO_PROMISES__._AsyncGenerator(function(_generator){let i=0;return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._for(function(){return i<until;},function(){return i++;},function(){return _generator._yield(i).then(__GLOBAL_ASYNC_TO_PROMISES__._empty);}),__GLOBAL_ASYNC_TO_PROMISES__._empty);});}}

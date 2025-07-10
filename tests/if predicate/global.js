@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo){return __GLOBAL_ASYNC_TO_PROMISES__._call(foo,function(_foo){if(_foo){return 1;}else{return 0;}});})

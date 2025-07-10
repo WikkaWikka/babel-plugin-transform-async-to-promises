@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,until){let count=0;return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._for(function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(foo,function(_foo){return _foo!==until;});},void 0,function(){++count;}),function(){return count;});})

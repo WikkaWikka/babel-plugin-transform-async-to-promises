@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(iter){let _interrupt=false;let result=0;return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._forAwaitOf(iter,function(value){result+=value;if(result>10){_interrupt=true;}},function(){return _interrupt;}),function(){return result;});})

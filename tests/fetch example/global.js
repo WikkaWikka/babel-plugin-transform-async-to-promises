@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(url){return __GLOBAL_ASYNC_TO_PROMISES__._await(fetch(url),function(response){return __GLOBAL_ASYNC_TO_PROMISES__._await(response.blob(),URL.createObjectURL);});})

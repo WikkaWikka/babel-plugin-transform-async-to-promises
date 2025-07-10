@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(_async,_await){return __GLOBAL_ASYNC_TO_PROMISES__._await(_async(0),function(_async2){return _async2&&_await();});})

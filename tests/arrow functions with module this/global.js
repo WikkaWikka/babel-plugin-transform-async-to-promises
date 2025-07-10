@@ -1,0 +1,1 @@
+const _this=this;return function(){return __GLOBAL_ASYNC_TO_PROMISES__._await(_this);}

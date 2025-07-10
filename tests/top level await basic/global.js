@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._await(fetch("https://www.example.com/"),function(response){return __GLOBAL_ASYNC_TO_PROMISES__._await(response.json(),function(json){console.log(json);});});

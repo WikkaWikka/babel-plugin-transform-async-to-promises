@@ -1,0 +1,1 @@
+function(foo){return __GLOBAL_ASYNC_TO_PROMISES__._await(foo);}

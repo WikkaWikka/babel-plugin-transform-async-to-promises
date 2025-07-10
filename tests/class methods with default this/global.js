@@ -1,0 +1,1 @@
+function(){const foo=__GLOBAL_ASYNC_TO_PROMISES__._async(function(result){if(result===undefined)result=Promise.resolve(true);return result;});return class{foo(baz){const _this=this;return __GLOBAL_ASYNC_TO_PROMISES__._call(function(){if(baz===undefined)baz=_this.bar();return __GLOBAL_ASYNC_TO_PROMISES__._await(baz);});}bar(result=foo()){return result;}};}
