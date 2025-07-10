@@ -1,1 +1,1 @@
-_async(()=>{console.log('foo');if(foo){return console.log(foo);}})();
+_async(function(){console.log('foo');if(foo){return console.log(foo);}})();

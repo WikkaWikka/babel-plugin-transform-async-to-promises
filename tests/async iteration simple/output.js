@@ -1,1 +1,1 @@
-()=>new _AsyncGenerator(_generator=>_generator._yield(0).then(()=>_generator._yield(1).then(()=>_generator._yield(2).then(_empty))))
+function(){return new _AsyncGenerator(function(_generator){return _generator._yield(0).then(function(){return _generator._yield(1).then(function(){return _generator._yield(2).then(_empty);});});});}

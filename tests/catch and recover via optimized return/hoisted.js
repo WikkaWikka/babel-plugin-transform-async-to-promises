@@ -1,1 +1,1 @@
-function(foo,bar){return _await(_catch(foo,function(){return _call(bar);}));}
+output.js

@@ -1,1 +1,1 @@
-(foo,bar)=>_call(foo,f=>_call(bar,b=>f+b))
+function(foo,bar){return _call(foo,function(f){return _call(bar,function(b){return f+b;});});}

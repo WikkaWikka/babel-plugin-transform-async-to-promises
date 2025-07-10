@@ -1,1 +1,1 @@
-_await(fetch("https://www.example.com/"),response=>_await(response.json(),json=>{console.log(json);}));
+_await(fetch("https://www.example.com/"),function(response){return _await(response.json(),function(json){console.log(json);});});

@@ -1,1 +1,1 @@
-(foo,bar)=>_await(_catch(foo,()=>_call(bar)))
+function(foo,bar){return _await(_catch(foo,function(){return _call(bar);}));}

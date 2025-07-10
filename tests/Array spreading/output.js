@@ -1,1 +1,1 @@
-foo=>_call(foo,([bar])=>bar)
+function(foo){return _call(foo,function([bar]){return bar;});}

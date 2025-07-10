@@ -1,1 +1,1 @@
-_async((left,right)=>{const _left=left();return _left&&right();})
+_async(function(left,right){const _left=left();return _left&&right();})

@@ -1,1 +1,1 @@
-func=>_await(_finally(()=>_finallyRethrows(func,(_wasThrown,_result)=>{if(0){return"not this";}return _rethrow(_wasThrown,_result);}),()=>"suppressed"))
+function(func){return _await(_finally(function(){return _finallyRethrows(func,function(_wasThrown,_result){return _rethrow(_wasThrown,_result);});},function(){return"suppressed";}));}

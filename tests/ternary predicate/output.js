@@ -1,1 +1,1 @@
-(foo,bar,baz)=>_call(foo,_foo=>_foo?bar():baz())
+function(foo,bar,baz){return _call(foo,function(_foo){return _foo?bar():baz();});}

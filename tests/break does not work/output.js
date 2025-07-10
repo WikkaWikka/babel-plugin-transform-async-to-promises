@@ -1,3 +1,3 @@
-_async(()=>{let _interrupt=false;return _continueIgnored(_for(()=>!_interrupt,void 0,()=>{console.log("loop");return _await(null,()=>{// important
+_async(function(){let _interrupt=false;return _continueIgnored(_for(function(){return!_interrupt;},void 0,function(){console.log("loop");return _await(null,function(){// important
 _interrupt=true;});// important
 }));})

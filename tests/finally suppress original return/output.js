@@ -1,1 +1,1 @@
-value=>_await(_finally(value,()=>"suppressed"))
+function(value){return _await(_finally(value,function(){return"suppressed";}));}

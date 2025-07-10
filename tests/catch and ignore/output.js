@@ -1,1 +1,1 @@
-foo=>_await(_catch(foo,_empty))
+function(foo){return _await(_catch(foo,_empty));}

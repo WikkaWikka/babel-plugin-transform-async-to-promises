@@ -1,1 +1,1 @@
-function(){const unused=1;return _await();}
+output.js

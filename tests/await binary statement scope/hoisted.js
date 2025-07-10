@@ -1,1 +1,1 @@
-_async(function(left,right){if(true){const _left=left();return _call(right,function(_right){return _left+_right;});}else return false;})
+output.js

@@ -1,1 +1,1 @@
-_async(function(iter,callback){return _continue(_forAwaitOf(iter,_empty),function(){return callback();});})
+output.js

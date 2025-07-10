@@ -1,1 +1,1 @@
-()=>{const unused=1;return _await();}
+function(){const unused=1;return _await();}
