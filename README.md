@@ -1,3 +1,8 @@
+Forked to layer some additional functionality and bug fixes.
+
+See https://github.com/rpetrich/babel-plugin-transform-async-to-promises
+
+========================================
 babel-plugin-transform-async-to-promises
 ========================================
 
