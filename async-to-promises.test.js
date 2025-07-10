@@ -4,7 +4,7 @@ const fs = require("fs");
 const checkTestCases = true;
 const checkOutputMatches = true;
 const testsToRun = [];
-const shouldWriteOutput = true;
+const shouldWriteOutput = false;
 
 const runInlined = true;
 const runHoisted = true;
