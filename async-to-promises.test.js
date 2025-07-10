@@ -286,29 +286,6 @@ for (const babelName of Object.keys(environments)) {
 			});
 		});
 	});
-	describe("optIn", () => {
-		const withoutDirectiveInput = 'async function test(){return 42;}';
-		const optInDirective = '"use transform-async-to-promises";\n';
-		// Test that the opt-in directive works correctly
-		test("should not transform code without opt-in", () => {
-		const notOptInAst = parse(babel, withoutDirectiveInput);
-		const notOptInResult = babel.transformFromAst(notOptInAst, withoutDirectiveInput, {
-			plugins: [[pluginUnderTest, { optIn: true }]],
-			compact: true,
-		});
-			expect(notOptInResult.code).toBe(withoutDirectiveInput);
-		});
-		test("should transform code with opt-in", () => {
-			const optInInput = optInDirective + withoutDirectiveInput;
-			const optInAst = parse(babel, optInInput);
-			const optInResult = babel.transformFromAst(optInAst, optInInput, {
-				plugins: [[pluginUnderTest, { optIn: true }]],
-				compact: true,
-			});
-			expect(optInResult.code).not.toBe(optInInput);
-			expect(optInResult.code).toContain("_await");
-		});
-	});
 	for (const name of fs.readdirSync("tests").sort()) {
 		if (testsToRun.length && testsToRun.indexOf(name) === -1) {
 			continue;

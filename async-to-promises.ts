@@ -57,7 +57,6 @@ interface AsyncToPromisesConfiguration {
 	externalHelpers: boolean | "disabled" | "global" | "require";
 	hoist: boolean;
 	inlineHelpers: boolean;
-	optIn?: boolean;
 	minify: boolean;
 	target: "es5" | "es6";
 	topLevelAwait: "disabled" | "simple" | "return" | "ignore";
@@ -70,7 +69,6 @@ const defaultConfigValues: AsyncToPromisesConfiguration = {
 	minify: false,
 	target: "es5",
 	topLevelAwait: "disabled",
-	optIn: false
 } as const;
 
 const GLOBAL_IDENTIFIER = "__GLOBAL_ASYNC_TO_PROMISES__";
@@ -310,18 +308,11 @@ declare module "@babel/traverse" {
 type UsedHelpers = { [key in HelperName]: true };
 
 interface PluginState {
-	file?: {
-		opts?: {
-			filename?: string;
-		};
-	};
-	filename?: string;
 	readonly opts: Partial<Readonly<AsyncToPromisesConfiguration>>;
 	globalHelpersIdentifier?: Identifier;
 	hasTopLevelAwait?: boolean;
 	isRuntimeDeclarationFile?: boolean;
 	usedHelpers?: UsedHelpers;
-	skipFile: boolean;
 }
 
 interface GeneratorState {
@@ -4297,10 +4288,10 @@ export default function ({
 		} else {
 			const externalHelpersMode = normalizeExternalHelpers(readConfigKey(state.opts, "externalHelpers"));
 
-			result = file.declarations[name] = usesIdentifier(file.path, name)
-				? file.path.scope.generateUidIdentifier(name)
-				: types.identifier(name);
-			helperNameMap.set(result, name);
+				result = file.declarations[name] = usesIdentifier(file.path, name)
+					? file.path.scope.generateUidIdentifier(name)
+					: types.identifier(name);
+				helperNameMap.set(result, name);
 
 			if (externalHelpersMode === "require") {
 				/* istanbul ignore next */
@@ -4846,22 +4837,6 @@ export default function ({
 		},
 	};
 
-function skipProcessing(visitors) {
-    for (const key in visitors) {
-		const original = visitors[key];
-		if (typeof original === 'object') {
-			skipProcessing(original);
-			continue;
-		}
-		visitors[key] = function (path, state, ...rest) {
-			if (!state.skipFile || key === "Directive") {
-				// directive sets the state, so always let it run
-				return original.apply(this, [path, state, ...rest]);
-			}
-		};
-	}
-}
-
 	const findAwaitExpressionVisitor: Visitor<FindAwaitExpressionState> = {
 		AwaitExpression(path) {
 			this.awaitPath = path;
@@ -4870,7 +4845,12 @@ function skipProcessing(visitors) {
 	};
 
 	// Main babel plugin implementation and top level visitor
-	const topLevelVisitors = {
+	return {
+		name: "transform-async-to-promises",
+		manipulateOptions(_options: any, parserOptions: { plugins: string[] }) {
+			parserOptions.plugins.push("asyncGenerators");
+		},
+		visitor: {
 			AwaitExpression(path) {
 				if (!path.getFunctionParent() && !this.hasTopLevelAwait) {
 					this.hasTopLevelAwait = true;
@@ -4886,14 +4866,9 @@ function skipProcessing(visitors) {
 					}
 				},
 			},
-			Directive(path, state) {
+			Directive(path) {
 				const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
 				if (
-					path.node.value.value === "use transform-async-to-promises" && readConfigKey(this.opts, "optIn")
-				) {
-					state.skipFile = false; // skip this file if it has the opt-in directive
-					return;
-				} else if (
 					path.node.value.value === "use transform-async-to-promises-runtime" &&
 					externalHelpersMode === "global"
 				) {
@@ -4925,7 +4900,7 @@ function skipProcessing(visitors) {
 					// Remove the directive and replace with AllHelpers declaration and assignment
 					nodePaths.insertAfter(assignment);
 					path.remove();
-				} 
+				}
 			},
 			ExportDeclaration: {
 				exit(path) {
@@ -4938,9 +4913,6 @@ function skipProcessing(visitors) {
 				},
 			},
 			Program: {
-				enter(path, state) {
-					state.skipFile = readConfigKey(state.opts, "optIn");
-				},
 				exit(path) {
 					if (this.hasTopLevelAwait) {
 						// rediscover the top level await path since it may have been reorganized by a module plugin
@@ -5318,14 +5290,7 @@ function skipProcessing(visitors) {
 					}
 				}
 			},
-		};
-	skipProcessing(topLevelVisitors);
-	return {
-		name: "transform-async-to-promises",
-		manipulateOptions(_options: any, parserOptions: { plugins: string[] }) {
-			parserOptions.plugins.push("asyncGenerators");
 		},
-		visitor: topLevelVisitors
 	};
 }
 
