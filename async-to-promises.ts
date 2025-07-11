@@ -4935,7 +4935,7 @@ export default function ({
 			},
 		},
 		Program: {
-			enter(path, state) {
+			enter(_path, state) {
 				state.skipFile = readConfigKey(state.opts, "optIn") ?? false;
 			},
 			exit(path) {
