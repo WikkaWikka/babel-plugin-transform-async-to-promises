@@ -41,7 +41,7 @@ import {
 	V8IntrinsicIdentifier,
 	PrivateName,
 } from "@babel/types";
-import { NodePath, Scope, Visitor } from "@babel/traverse";
+import { NodePath, Scope, VisitNode, VisitNodeFunction, Visitor } from "@babel/traverse";
 import { PluginObj } from "@babel/core";
 import { code as helperCode } from "./helpers-string";
 
@@ -70,7 +70,7 @@ const defaultConfigValues: AsyncToPromisesConfiguration = {
 	minify: false,
 	target: "es5",
 	topLevelAwait: "disabled",
-	optIn: false
+	optIn: false,
 } as const;
 
 const GLOBAL_IDENTIFIER = "__GLOBAL_ASYNC_TO_PROMISES__";
@@ -4702,7 +4702,8 @@ export default function ({
 	}
 
 	// Visitor to rewrite the top level return expressions of an async function
-	const rewriteTopLevelReturnsVisitor: Visitor = {
+	const rewriteTopLevelReturnsVisitor: Visitor<{
+	}> = {
 		Function: skipNode,
 		ReturnStatement(path) {
 			const argument = path.get("argument");
@@ -4846,21 +4847,23 @@ export default function ({
 		},
 	};
 
-function skipProcessing(visitors) {
-    for (const key in visitors) {
-		const original = visitors[key];
-		if (typeof original === 'object') {
-			skipProcessing(original);
-			continue;
-		}
-		visitors[key] = function (path, state, ...rest) {
-			if (!state.skipFile || key === "Directive") {
-				// directive sets the state, so always let it run
-				return original.apply(this, [path, state, ...rest]);
+	function skipProcessing(visitors: Visitor<PluginState>) {
+		for (const key in visitors) {
+			const node = key as Node["type"];
+			const original = visitors[node] as VisitNode<any, any>;
+			if (typeof original === "object") {
+				skipProcessing(original);
+				continue;
 			}
-		};
+			const skipWrapper = function (path, state, ...rest) {
+				if (!state.skipFile || key === "Directive") {
+					// directive sets the state, so always let it run
+					return original.apply(this, [path, state, ...rest]);
+				}
+			} as VisitNodeFunction<any, any>;
+			(visitors[node] as VisitNode<any, any>) = skipWrapper;
+		}
 	}
-}
 
 	const findAwaitExpressionVisitor: Visitor<FindAwaitExpressionState> = {
 		AwaitExpression(path) {
@@ -4870,398 +4873,258 @@ function skipProcessing(visitors) {
 	};
 
 	// Main babel plugin implementation and top level visitor
-	const topLevelVisitors = {
-			AwaitExpression(path) {
-				if (!path.getFunctionParent() && !this.hasTopLevelAwait) {
-					this.hasTopLevelAwait = true;
+	const topLevelVisitors: Visitor<PluginState> = {
+		AwaitExpression(path) {
+			if (!path.getFunctionParent() && !this.hasTopLevelAwait) {
+				this.hasTopLevelAwait = true;
+			}
+		},
+		ImportDeclaration: {
+			exit(path) {
+				if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
+					throw path.buildCodeFrameError(
+						`Cannot import after a top-level await when using topLevelAwait: "simple"!`,
+						TypeError
+					);
 				}
 			},
-			ImportDeclaration: {
-				exit(path) {
-					if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
-						throw path.buildCodeFrameError(
-							`Cannot import after a top-level await when using topLevelAwait: "simple"!`,
-							TypeError
-						);
-					}
-				},
+		},
+		Directive(path, state) {
+			const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
+			if (path.node.value.value === "use transform-async-to-promises" && readConfigKey(this.opts, "optIn")) {
+				state.skipFile = false; // skip this file if it has the opt-in directive
+				return;
+			} else if (
+				path.node.value.value === "use transform-async-to-promises-runtime" &&
+				externalHelpersMode === "global"
+			) {
+				// if (globalRuntimeState.runtimeDeclared) {
+				// 	throw path.buildCodeFrameError(
+				// 		`Cannot declare the transform-async-to-promises runtime more than once!`,
+				// 		TypeError
+				// 	);
+				// }
+				initializeHelpers();
+				// This file declares the runtime - create the global helpers object
+				globalRuntimeState.runtimeDeclared = true;
+				let nodePaths: NodePath<any> = path;
+				// insert the helpers into the node
+				for (const key in helpers) {
+					const helper = helpers[key];
+					nodePaths.insertAfter(helper.value);
+					nodePaths = nodePaths.getNextSibling();
+				}
+
+				// Create assignment to
+				const assignment = types.expressionStatement(
+					types.assignmentExpression("=", types.identifier(GLOBAL_IDENTIFIER), types.identifier("AllHelpers"))
+				);
+				// Remove the directive and replace with AllHelpers declaration and assignment
+				nodePaths.insertAfter(assignment);
+				path.remove();
+			}
+		},
+		ExportDeclaration: {
+			exit(path) {
+				if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
+					throw path.buildCodeFrameError(
+						`Cannot export after a top-level await when using topLevelAwait: "simple"!`,
+						TypeError
+					);
+				}
 			},
-			Directive(path, state) {
-				const externalHelpersMode = normalizeExternalHelpers(readConfigKey(this.opts, "externalHelpers"));
-				if (
-					path.node.value.value === "use transform-async-to-promises" && readConfigKey(this.opts, "optIn")
-				) {
-					state.skipFile = false; // skip this file if it has the opt-in directive
+		},
+		Program: {
+			enter(_path, state) {
+				state.skipFile = readConfigKey(state.opts, "optIn") ?? false;
+			},
+			exit(path) {
+				if (this.hasTopLevelAwait) {
+					// rediscover the top level await path since it may have been reorganized by a module plugin
+					let rediscoverState = {} as FindAwaitExpressionState;
+					path.traverse(findAwaitExpressionVisitor, rediscoverState);
+					if (rediscoverState.awaitPath !== undefined) {
+						const functionParent = rediscoverState.awaitPath.getFunctionParent();
+						const topLevelAwaitParent = functionParent ? functionParent.get("body") : path;
+						switch (readConfigKey(this.opts, "topLevelAwait")) {
+							case "simple": {
+								rewriteAsyncBlock({ state: this }, topLevelAwaitParent, [], undefined, false, true);
+								break;
+							}
+							case "return": {
+								rewriteAsyncBlock({ state: this }, topLevelAwaitParent, [], undefined, false, false);
+								break;
+							}
+							case "ignore":
+								break;
+							default:
+								throw rediscoverState.awaitPath.buildCodeFrameError(
+									`Top level await is not supported unless experimental topLevelAwait: "simple" or topLevelAwait: "return" options are specified!`,
+									TypeError
+								);
+						}
+					}
+				}
+				const usedHelpers = this.usedHelpers;
+				if (usedHelpers !== undefined) {
+					const file = getFile(path);
+					for (const helperName of Object.keys(usedHelpers)) {
+						const helper = helpers![helperName];
+						const value = cloneNode(helper.value) as typeof helper.value;
+
+						const externalHelpersMode = normalizeExternalHelpers(
+							readConfigKey(this.opts, "externalHelpers")
+						);
+						if (externalHelpersMode !== "global") {
+							const newPath = insertHelper(file.path, value);
+							newPath.traverse({
+								Identifier(identifierPath) {
+									const name = identifierPath.node.name;
+									if (Object.hasOwnProperty.call(helpers, name)) {
+										identifierPath.replaceWith(file.declarations[name]);
+									}
+								},
+							} as Visitor);
+						}
+					}
+				}
+			},
+		},
+		FunctionDeclaration(path) {
+			const node = path.node;
+			if (node.async) {
+				const expression = types.functionExpression(
+					undefined,
+					node.params,
+					node.body,
+					node.generator,
+					node.async
+				);
+				if (node.id === null || node.id === undefined) {
+					path.replaceWith(expression);
+					reregisterDeclarations(path);
 					return;
-				} else if (
-					path.node.value.value === "use transform-async-to-promises-runtime" &&
-					externalHelpersMode === "global"
-				) {
-					// if (globalRuntimeState.runtimeDeclared) {
-					// 	throw path.buildCodeFrameError(
-					// 		`Cannot declare the transform-async-to-promises runtime more than once!`,
-					// 		TypeError
-					// 	);
-					// }
-					initializeHelpers();
-					// This file declares the runtime - create the global helpers object
-					globalRuntimeState.runtimeDeclared = true;
-					let nodePaths: NodePath<any> = path;
-					// insert the helpers into the node
-					for (const key in helpers) {
-						const helper = helpers[key];
-						nodePaths.insertAfter(helper.value);
-						nodePaths = nodePaths.getNextSibling();
-					}
-
-					// Create assignment to
-					const assignment = types.expressionStatement(
-						types.assignmentExpression(
-							"=",
-							types.identifier(GLOBAL_IDENTIFIER),
-							types.identifier("AllHelpers")
-						)
-					);
-					// Remove the directive and replace with AllHelpers declaration and assignment
-					nodePaths.insertAfter(assignment);
-					path.remove();
-				} 
-			},
-			ExportDeclaration: {
-				exit(path) {
-					if (this.hasTopLevelAwait && readConfigKey(this.opts, "topLevelAwait") === "simple") {
-						throw path.buildCodeFrameError(
-							`Cannot export after a top-level await when using topLevelAwait: "simple"!`,
-							TypeError
-						);
-					}
-				},
-			},
-			Program: {
-				enter(path, state) {
-					state.skipFile = readConfigKey(state.opts, "optIn");
-				},
-				exit(path) {
-					if (this.hasTopLevelAwait) {
-						// rediscover the top level await path since it may have been reorganized by a module plugin
-						let rediscoverState = {} as FindAwaitExpressionState;
-						path.traverse(findAwaitExpressionVisitor, rediscoverState);
-						if (rediscoverState.awaitPath !== undefined) {
-							const functionParent = rediscoverState.awaitPath.getFunctionParent();
-							const topLevelAwaitParent = functionParent ? functionParent.get("body") : path;
-							switch (readConfigKey(this.opts, "topLevelAwait")) {
-								case "simple": {
-									rewriteAsyncBlock({ state: this }, topLevelAwaitParent, [], undefined, false, true);
-									break;
-								}
-								case "return": {
-									rewriteAsyncBlock(
-										{ state: this },
-										topLevelAwaitParent,
-										[],
-										undefined,
-										false,
-										false
-									);
-									break;
-								}
-								case "ignore":
-									break;
-								default:
-									throw rediscoverState.awaitPath.buildCodeFrameError(
-										`Top level await is not supported unless experimental topLevelAwait: "simple" or topLevelAwait: "return" options are specified!`,
-										TypeError
-									);
-							}
-						}
-					}
-					const usedHelpers = this.usedHelpers;
-					if (usedHelpers !== undefined) {
-						const file = getFile(path);
-						for (const helperName of Object.keys(usedHelpers)) {
-							const helper = helpers![helperName];
-							const value = cloneNode(helper.value) as typeof helper.value;
-
-							const externalHelpersMode = normalizeExternalHelpers(
-								readConfigKey(this.opts, "externalHelpers")
-							);
-							if (externalHelpersMode !== "global") {
-								const newPath = insertHelper(file.path, value);
-								newPath.traverse({
-									Identifier(identifierPath) {
-										const name = identifierPath.node.name;
-										if (Object.hasOwnProperty.call(helpers, name)) {
-											identifierPath.replaceWith(file.declarations[name]);
-										}
-									},
-								} as Visitor);
-							}
-						}
-					}
-				},
-			},
-			FunctionDeclaration(path) {
-				const node = path.node;
-				if (node.async) {
-					const expression = types.functionExpression(
-						undefined,
-						node.params,
-						node.body,
-						node.generator,
-						node.async
-					);
-					if (node.id === null || node.id === undefined) {
-						path.replaceWith(expression);
-						reregisterDeclarations(path);
-						return;
-					}
-					const declarators = [types.variableDeclarator(node.id, expression)];
-					if (path.parentPath.isExportDeclaration()) {
-						if (path.parentPath.isExportDefaultDeclaration()) {
-							// export default function... is a function declaration in babel 7
-							const targetPath = path.parentPath;
-							targetPath.replaceWith(types.variableDeclaration("const", declarators));
-							reregisterDeclarations(targetPath);
-							reregisterDeclarations(targetPath.insertAfter(types.exportDefaultDeclaration(node.id)));
-							reorderPathBeforeSiblingStatements(targetPath);
-						} else {
-							path.replaceWith(types.variableDeclaration("const", declarators));
-							reregisterDeclarations(path);
-							reorderPathBeforeSiblingStatements(path.parentPath);
-						}
+				}
+				const declarators = [types.variableDeclarator(node.id, expression)];
+				if (path.parentPath.isExportDeclaration()) {
+					if (path.parentPath.isExportDefaultDeclaration()) {
+						// export default function... is a function declaration in babel 7
+						const targetPath = path.parentPath;
+						targetPath.replaceWith(types.variableDeclaration("const", declarators));
+						reregisterDeclarations(targetPath);
+						reregisterDeclarations(targetPath.insertAfter(types.exportDefaultDeclaration(node.id)));
+						reorderPathBeforeSiblingStatements(targetPath);
 					} else {
 						path.replaceWith(types.variableDeclaration("const", declarators));
 						reregisterDeclarations(path);
-						reorderPathBeforeSiblingStatements(path);
+						reorderPathBeforeSiblingStatements(path.parentPath);
 					}
-				}
-			},
-			ArrowFunctionExpression(path) {
-				const node = path.node;
-				if (node.async) {
-					rewriteThisExpressions(path, path.getFunctionParent() || path.scope.getProgramParent().path);
-					const body = types.isBlockStatement(path.node.body)
-						? path.node.body
-						: blockStatement([types.returnStatement(path.node.body)]);
-					path.replaceWith(types.functionExpression(undefined, node.params, body, false, node.async));
+				} else {
+					path.replaceWith(types.variableDeclaration("const", declarators));
 					reregisterDeclarations(path);
+					reorderPathBeforeSiblingStatements(path);
 				}
-			},
-			FunctionExpression(path) {
-				if (path.node.async) {
-					const id = path.node.id;
-					if (path.parentPath.isExportDefaultDeclaration() && id !== null && id !== undefined) {
-						// export default function... is a function expression in babel 6
-						const targetPath = path.parentPath;
-						targetPath.replaceWith(
-							types.variableDeclaration("const", [
-								types.variableDeclarator(
-									id,
-									types.functionExpression(
-										undefined,
-										path.node.params,
-										path.node.body,
-										path.node.generator,
-										path.node.async
-									)
-								),
-							])
-						);
-						reregisterDeclarations(targetPath);
-						reregisterDeclarations(targetPath.insertAfter(types.exportDefaultDeclaration(id)));
-						reorderPathBeforeSiblingStatements(targetPath);
-						return;
-					}
-					rewriteDefaultArguments(path);
-					rewriteThisArgumentsAndHoistFunctions(path, path, false);
-					const bodyPath = path.get("body");
-					if (path.node.generator) {
-						const generatorIdentifier = path.scope.generateUidIdentifier("generator");
-						path.scope.push({ kind: "const", id: generatorIdentifier, unique: true });
-						const generatorBinding = path.scope.getBinding(generatorIdentifier.name);
-						if (typeof generatorBinding === "undefined") {
-							/* istanbul ignore next */
-							throw path.buildCodeFrameError(
-								`Could not find newly created binding for ${generatorIdentifier.name}!`,
-								Error
-							);
-						}
-						rewriteAsyncBlock({ state: this, generatorIdentifier }, bodyPath, []);
-						generatorBinding.path.remove();
-						path.replaceWith(
-							functionize(
-								this,
-								path.node.params,
-								types.newExpression(helperReference(this, path, "_AsyncGenerator"), [
-									functionize(this, [generatorIdentifier], bodyPath.node, path),
-								]),
-								path,
-								id
-							)
-						);
-					} else {
-						rewriteAsyncBlock({ state: this }, path, []);
-						const inlineHelpers = readConfigKey(this.opts, "inlineHelpers");
-						const canThrow = checkForErrorsAndRewriteReturns(
-							bodyPath,
-							this,
-							inlineHelpers || (id !== null && id !== undefined)
-						);
-						const parentPath = path.parentPath;
-						const skipReturn =
-							parentPath.isCallExpression() &&
-							parentPath.node.callee === path.node &&
-							parentPath.parentPath.isExpressionStatement();
-						if (!skipReturn && !pathsReturnOrThrowCurrentNodes(bodyPath).all) {
-							const awaitHelper = inlineHelpers
-								? promiseResolve()
-								: helperReference(this, path, "_await");
-							path.node.body.body.push(types.returnStatement(types.callExpression(awaitHelper, [])));
-						}
-						if (skipReturn) {
-							path.traverse(unwrapReturnPromiseVisitor);
-						}
-						if (canThrow) {
-							if (inlineHelpers || id) {
-								if (
-									!id &&
-									skipReturn &&
-									parentPath.isCallExpression() &&
-									parentPath.node.arguments.length === 0 &&
-									!pathsReturn(bodyPath).any
-								) {
-									parentPath.parentPath.replaceWith(
-										types.tryStatement(
-											bodyPath.node,
-											types.catchClause(
-												types.identifier("e"),
-												blockStatement([
-													types.expressionStatement(
-														types.callExpression(
-															types.memberExpression(
-																types.identifier("Promise"),
-																types.identifier("reject")
-															),
-															[types.identifier("e")]
-														)
-													),
-												])
-											)
-										)
-									);
-								} else {
-									path.replaceWith(
-										functionize(
-											this,
-											path.node.params,
-											blockStatement(
-												types.tryStatement(
-													bodyPath.node,
-													types.catchClause(
-														types.identifier("e"),
-														blockStatement([
-															(skipReturn
-																? types.expressionStatement
-																: types.returnStatement)(
-																types.callExpression(
-																	types.memberExpression(
-																		types.identifier("Promise"),
-																		types.identifier("reject")
-																	),
-																	[types.identifier("e")]
-																)
-															),
-														])
-													)
-												)
-											),
-											path,
-											id
-										)
-									);
-								}
-							} else {
-								// here
-								bodyPath.traverse(rewriteTopLevelReturnsVisitor);
-								path.replaceWith(
-									types.callExpression(helperReference(this, path, "_async"), [
-										functionize(this, path.node.params, bodyPath.node, path),
-									])
-								);
-								// here
-							}
-						} else {
-							if (!inlineHelpers) {
-								checkForErrorsAndRewriteReturns(bodyPath, this, true);
-							}
-							path.replaceWith(functionize(this, path.node.params, bodyPath.node, path, id));
-						}
-					}
-					nodeIsAsyncSet.add(path.node);
-				}
-			},
-			ClassMethod(path) {
-				if (path.node.async) {
-					const body = path.get("body");
-					if (path.node.kind === "method") {
-						rewriteDefaultArguments(path);
-						body.replaceWith(types.blockStatement([body.node]));
-						const target = body.get("body")[0];
-						if (!target.isBlockStatement()) {
-							/* istanbul ignore next */
-							throw path.buildCodeFrameError(
-								`Expected a BlockStatement, got a ${target.type}`,
-								TypeError
-							);
-						}
-						if (path.node.generator) {
-							const generatorIdentifier = target.scope.generateUidIdentifier("generator");
-							target.scope.push({
-								kind: "const",
-								id: generatorIdentifier,
-								init: generatorIdentifier,
-								unique: true,
-							});
-							const generatorBinding = target.scope.getBinding(generatorIdentifier.name);
-							if (typeof generatorBinding === "undefined") {
-								/* istanbul ignore next */
-								throw path.buildCodeFrameError(
-									`Could not find newly created binding for ${generatorIdentifier.name}!`,
-									Error
-								);
-							}
-							rewriteAsyncBlock({ state: this, generatorIdentifier }, target, []);
-							generatorBinding.path.remove();
-							target.replaceWith(
-								types.returnStatement(
-									types.newExpression(helperReference(this, path, "_AsyncGenerator"), [
-										functionize(this, [generatorIdentifier], target.node, target),
-									])
+			}
+		},
+		ArrowFunctionExpression(path) {
+			const node = path.node;
+			if (node.async) {
+				rewriteThisExpressions(path, path.getFunctionParent() || path.scope.getProgramParent().path);
+				const body = types.isBlockStatement(path.node.body)
+					? path.node.body
+					: blockStatement([types.returnStatement(path.node.body)]);
+				path.replaceWith(types.functionExpression(undefined, node.params, body, false, node.async));
+				reregisterDeclarations(path);
+			}
+		},
+		FunctionExpression(path) {
+			if (path.node.async) {
+				const id = path.node.id;
+				if (path.parentPath.isExportDefaultDeclaration() && id !== null && id !== undefined) {
+					// export default function... is a function expression in babel 6
+					const targetPath = path.parentPath;
+					targetPath.replaceWith(
+						types.variableDeclaration("const", [
+							types.variableDeclarator(
+								id,
+								types.functionExpression(
+									undefined,
+									path.node.params,
+									path.node.body,
+									path.node.generator,
+									path.node.async
 								)
-							);
-						} else {
-							const inlineHelpers = readConfigKey(this.opts, "inlineHelpers");
-							rewriteThisArgumentsAndHoistFunctions(target, inlineHelpers ? target : body, true);
-							rewriteAsyncBlock({ state: this }, target, []);
-							const statements = target.get("body");
-							const lastStatement = statements[statements.length - 1];
-							if (!lastStatement || !lastStatement.isReturnStatement()) {
-								const awaitHelper = inlineHelpers
-									? promiseResolve()
-									: helperReference(this, path, "_await");
-								target.node.body.push(types.returnStatement(types.callExpression(awaitHelper, [])));
-							}
-							const canThrow = checkForErrorsAndRewriteReturns(body, this, true);
-							if (!canThrow) {
-								target.replaceWithMultiple(target.node.body);
-							} else if (inlineHelpers) {
-								target.replaceWith(
+							),
+						])
+					);
+					reregisterDeclarations(targetPath);
+					reregisterDeclarations(targetPath.insertAfter(types.exportDefaultDeclaration(id)));
+					reorderPathBeforeSiblingStatements(targetPath);
+					return;
+				}
+				rewriteDefaultArguments(path);
+				rewriteThisArgumentsAndHoistFunctions(path, path, false);
+				const bodyPath = path.get("body");
+				if (path.node.generator) {
+					const generatorIdentifier = path.scope.generateUidIdentifier("generator");
+					path.scope.push({ kind: "const", id: generatorIdentifier, unique: true });
+					const generatorBinding = path.scope.getBinding(generatorIdentifier.name);
+					if (typeof generatorBinding === "undefined") {
+						/* istanbul ignore next */
+						throw path.buildCodeFrameError(
+							`Could not find newly created binding for ${generatorIdentifier.name}!`,
+							Error
+						);
+					}
+					rewriteAsyncBlock({ state: this, generatorIdentifier }, bodyPath, []);
+					generatorBinding.path.remove();
+					path.replaceWith(
+						functionize(
+							this,
+							path.node.params,
+							types.newExpression(helperReference(this, path, "_AsyncGenerator"), [
+								functionize(this, [generatorIdentifier], bodyPath.node, path),
+							]),
+							path,
+							id
+						)
+					);
+				} else {
+					rewriteAsyncBlock({ state: this }, path, []);
+					const inlineHelpers = readConfigKey(this.opts, "inlineHelpers");
+					const canThrow = checkForErrorsAndRewriteReturns(
+						bodyPath,
+						this,
+						inlineHelpers || (id !== null && id !== undefined)
+					);
+					const parentPath = path.parentPath;
+					const skipReturn =
+						parentPath.isCallExpression() &&
+						parentPath.node.callee === path.node &&
+						parentPath.parentPath.isExpressionStatement();
+					if (!skipReturn && !pathsReturnOrThrowCurrentNodes(bodyPath).all) {
+						const awaitHelper = inlineHelpers ? promiseResolve() : helperReference(this, path, "_await");
+						path.node.body.body.push(types.returnStatement(types.callExpression(awaitHelper, [])));
+					}
+					if (skipReturn) {
+						path.traverse(unwrapReturnPromiseVisitor);
+					}
+					if (canThrow) {
+						if (inlineHelpers || id) {
+							if (
+								!id &&
+								skipReturn &&
+								parentPath.isCallExpression() &&
+								parentPath.node.arguments.length === 0 &&
+								!pathsReturn(bodyPath).any
+							) {
+								parentPath.parentPath.replaceWith(
 									types.tryStatement(
-										target.node,
+										bodyPath.node,
 										types.catchClause(
 											types.identifier("e"),
 											blockStatement([
-												types.returnStatement(
+												types.expressionStatement(
 													types.callExpression(
 														types.memberExpression(
 															types.identifier("Promise"),
@@ -5275,57 +5138,177 @@ function skipProcessing(visitors) {
 									)
 								);
 							} else {
-								target.replaceWith(
-									types.returnStatement(
-										types.callExpression(helperReference(this, path, "_call"), [
-											functionize(this, [], target.node, path),
-										])
+								path.replaceWith(
+									functionize(
+										this,
+										path.node.params,
+										blockStatement(
+											types.tryStatement(
+												bodyPath.node,
+												types.catchClause(
+													types.identifier("e"),
+													blockStatement([
+														(skipReturn
+															? types.expressionStatement
+															: types.returnStatement)(
+															types.callExpression(
+																types.memberExpression(
+																	types.identifier("Promise"),
+																	types.identifier("reject")
+																),
+																[types.identifier("e")]
+															)
+														),
+													])
+												)
+											)
+										),
+										path,
+										id
 									)
 								);
 							}
+						} else {
+							bodyPath.traverse(rewriteTopLevelReturnsVisitor);
+							path.replaceWith(
+								types.callExpression(helperReference(this, path, "_async"), [
+									functionize(this, path.node.params, bodyPath.node, path),
+								])
+							);
+						}
+					} else {
+						if (!inlineHelpers) {
+							checkForErrorsAndRewriteReturns(bodyPath, this, true);
+						}
+						path.replaceWith(functionize(this, path.node.params, bodyPath.node, path, id));
+					}
+				}
+				nodeIsAsyncSet.add(path.node);
+			}
+		},
+		ClassMethod(path) {
+			if (path.node.async) {
+				const body = path.get("body");
+				if (path.node.kind === "method") {
+					rewriteDefaultArguments(path);
+					body.replaceWith(types.blockStatement([body.node]));
+					const target = body.get("body")[0];
+					if (!target.isBlockStatement()) {
+						/* istanbul ignore next */
+						throw path.buildCodeFrameError(`Expected a BlockStatement, got a ${target.type}`, TypeError);
+					}
+					if (path.node.generator) {
+						const generatorIdentifier = target.scope.generateUidIdentifier("generator");
+						target.scope.push({
+							kind: "const",
+							id: generatorIdentifier,
+							init: generatorIdentifier,
+							unique: true,
+						});
+						const generatorBinding = target.scope.getBinding(generatorIdentifier.name);
+						if (typeof generatorBinding === "undefined") {
+							/* istanbul ignore next */
+							throw path.buildCodeFrameError(
+								`Could not find newly created binding for ${generatorIdentifier.name}!`,
+								Error
+							);
+						}
+						rewriteAsyncBlock({ state: this, generatorIdentifier }, target, []);
+						generatorBinding.path.remove();
+						target.replaceWith(
+							types.returnStatement(
+								types.newExpression(helperReference(this, path, "_AsyncGenerator"), [
+									functionize(this, [generatorIdentifier], target.node, target),
+								])
+							)
+						);
+					} else {
+						const inlineHelpers = readConfigKey(this.opts, "inlineHelpers");
+						rewriteThisArgumentsAndHoistFunctions(target, inlineHelpers ? target : body, true);
+						rewriteAsyncBlock({ state: this }, target, []);
+						const statements = target.get("body");
+						const lastStatement = statements[statements.length - 1];
+						if (!lastStatement || !lastStatement.isReturnStatement()) {
+							const awaitHelper = inlineHelpers
+								? promiseResolve()
+								: helperReference(this, path, "_await");
+							target.node.body.push(types.returnStatement(types.callExpression(awaitHelper, [])));
+						}
+						const canThrow = checkForErrorsAndRewriteReturns(body, this, true);
+						if (!canThrow) {
+							target.replaceWithMultiple(target.node.body);
+						} else if (inlineHelpers) {
+							target.replaceWith(
+								types.tryStatement(
+									target.node,
+									types.catchClause(
+										types.identifier("e"),
+										blockStatement([
+											types.returnStatement(
+												types.callExpression(
+													types.memberExpression(
+														types.identifier("Promise"),
+														types.identifier("reject")
+													),
+													[types.identifier("e")]
+												)
+											),
+										])
+									)
+								)
+							);
+						} else {
+							target.replaceWith(
+								types.returnStatement(
+									types.callExpression(helperReference(this, path, "_call"), [
+										functionize(this, [], target.node, path),
+									])
+								)
+							);
 						}
 					}
+				}
+				path.replaceWith(
+					types.classMethod(
+						path.node.kind,
+						path.node.key,
+						path.node.params,
+						path.node.body,
+						path.node.computed,
+						path.node.static
+					)
+				);
+			}
+		},
+		ObjectMethod(path) {
+			if (path.node.async) {
+				if (path.node.kind === "method") {
 					path.replaceWith(
-						types.classMethod(
-							path.node.kind,
+						types.objectProperty(
 							path.node.key,
-							path.node.params,
-							path.node.body,
+							types.functionExpression(
+								undefined,
+								path.node.params,
+								path.node.body,
+								path.node.generator,
+								path.node.async
+							),
 							path.node.computed,
-							path.node.static
+							false,
+							path.node.decorators
 						)
 					);
 				}
-			},
-			ObjectMethod(path) {
-				if (path.node.async) {
-					if (path.node.kind === "method") {
-						path.replaceWith(
-							types.objectProperty(
-								path.node.key,
-								types.functionExpression(
-									undefined,
-									path.node.params,
-									path.node.body,
-									path.node.generator,
-									path.node.async
-								),
-								path.node.computed,
-								false,
-								path.node.decorators
-							)
-						);
-					}
-				}
-			},
-		};
+			}
+		},
+	};
 	skipProcessing(topLevelVisitors);
 	return {
 		name: "transform-async-to-promises",
 		manipulateOptions(_options: any, parserOptions: { plugins: string[] }) {
 			parserOptions.plugins.push("asyncGenerators");
 		},
-		visitor: topLevelVisitors
+		visitor: topLevelVisitors,
 	};
 }
 
