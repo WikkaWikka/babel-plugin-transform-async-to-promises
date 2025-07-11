@@ -255,7 +255,7 @@ for (const babelName of Object.keys(environments)) {
 			const wrappedCode = `
 				(function() {
 					${globalRuntime.code}
-					return __GLOBAL_ASYNC_TO_PROMISES__;
+					return AllHelpers;
 				})()
 			`;
 
