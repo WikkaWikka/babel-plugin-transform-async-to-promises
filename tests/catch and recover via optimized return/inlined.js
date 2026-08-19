@@ -1,1 +1,1 @@
-function(foo,bar){try{return Promise.resolve(_catch(foo,function(){return Promise.resolve(bar());}));}catch(e){return Promise.reject(e);}}
+function(foo,bar){try{let _returned,_returnValue;return Promise.resolve(_continue(_catch(function(){_returnValue=foo();_returned=true;},function(){return Promise.resolve(bar());}),function(_settled){return _returned?_returnValue:_settled;}));}catch(e){return Promise.reject(e);}}

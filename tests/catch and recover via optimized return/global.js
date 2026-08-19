@@ -1,1 +1,1 @@
-__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,bar){return __GLOBAL_ASYNC_TO_PROMISES__._catch(foo,function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(bar);});})
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(foo,bar){let _returned,_returnValue;return __GLOBAL_ASYNC_TO_PROMISES__._continue(__GLOBAL_ASYNC_TO_PROMISES__._catch(function(){_returnValue=foo();_returned=true;},function(){return __GLOBAL_ASYNC_TO_PROMISES__._call(bar);}),function(_settled){return _returned?_returnValue:_settled;});})

@@ -1,0 +1,1 @@
+_async(function(rejectingThenable,log){return _finallyRethrows(function(){return _await(Promise.resolve(),function(){return rejectingThenable();});},function(_wasThrown,_result){log.push('finally');return _rethrow(_wasThrown,_result);});})

@@ -1,0 +1,1 @@
+function(resolvingThenable,log){try{let _returned,_returnValue;return Promise.resolve(_continue(_catch(function(){return Promise.resolve(Promise.resolve()).then(function(){_returnValue=resolvingThenable();_returned=true;});},function(){log.push('catch');return'from-catch';}),function(_settled){return _returned?_returnValue:_settled;}));}catch(e){return Promise.reject(e);}}

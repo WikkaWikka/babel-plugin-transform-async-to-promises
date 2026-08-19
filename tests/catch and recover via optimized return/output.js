@@ -1,1 +1,1 @@
-function(foo,bar){return _await(_catch(foo,function(){return _call(bar);}));}
+_async(function(foo,bar){let _returned,_returnValue;return _continue(_catch(function(){_returnValue=foo();_returned=true;},function(){return _call(bar);}),function(_settled){return _returned?_returnValue:_settled;});})

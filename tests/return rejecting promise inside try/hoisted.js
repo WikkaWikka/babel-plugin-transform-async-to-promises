@@ -1,0 +1,1 @@
+_async(function(rejectingThenable,log){let _returned,_returnValue;function _temp(){log.push('returning');_returnValue=rejectingThenable();_returned=1;}return _continue(_catch(function(){return _await(Promise.resolve(),_temp);},function(){log.push('catch');return'from-catch';}),function(_settled){return _returned?_returnValue:_settled;});})

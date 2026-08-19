@@ -1,1 +1,1 @@
-_async(function(arg){let _exit;function _temp(value){const _value$missing=value.missing;_exit=1;return _value$missing;}return _continue(_catch(function(){return _await(arg,_temp);},_empty),function(_result){return _exit?_result:"fallback";});})
+_async(function(arg){let _returned,_returnValue,_exit;function _temp(value){_returnValue=value.missing;_returned=1;_exit=1;}return _continue(_continue(_catch(function(){return _await(arg,_temp);},_empty),function(_settled){return _returned?_returnValue:_settled;}),function(_result){return _exit?_result:"fallback";});})
