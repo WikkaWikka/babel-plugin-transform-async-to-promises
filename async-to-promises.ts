@@ -286,6 +286,9 @@ type HelperName =
 
 const originalNodeMap = new WeakMap<Node, Node>();
 const skipNodeSet = new WeakSet<Node>();
+// Try statements whose value-returns were stashed by `stashTryBlockReturns`, keyed by the try node so
+// the rewrite site can hand the value back after `_catch` without threading state through signatures.
+const tryReturnStash = new WeakMap<Node, { returnedIdentifier: Identifier; returnValueIdentifier: Identifier }>();
 const breakIdentifierMap = new WeakMap<Node, Identifier>();
 const isHelperDefinitionSet = new WeakSet<Node>();
 const helperNameMap = new WeakMap<Identifier | MemberExpression, HelperName>();
@@ -1354,6 +1357,72 @@ export default function ({
 			}
 		}
 		return blocks;
+	}
+
+	// Stash `return <expr>` inside a try block that has a catch handler, so the value never becomes the
+	// try block's completion value. Left there it is settled *inside* `_catch`, so a thenable's rejection
+	// is routed to the very handler the return was leaving. Must run on the original AST, ahead of any
+	// async rewriting: afterwards a user return that followed an await has been relocated into a
+	// synthesized continuation and is indistinguishable from the returns this plugin generates itself.
+	function stashTryBlockReturns(pluginState: PluginState, path: NodePath) {
+		const minify = readConfigKey(pluginState.opts, "minify");
+		path.traverse({
+			Function(nestedPath) {
+				// Every async function gets its own pass when it is visited; reaching into nested ones would
+				// process the same try twice and, for an async nested function, do so after its own body has
+				// already been restructured.
+				nestedPath.skip();
+			},
+			TryStatement(tryPath) {
+				// Scoped to tries with a catch handler: that handler is what wrongly intercepts the
+				// returned thenable's rejection. A finalizer-only try has a related but distinct ordering
+				// deviation, and stashing there would let the try's return override a `return` in the
+				// `finally` -- which must win.
+				if (!tryPath.node.handler) {
+					return;
+				}
+				const stashablePaths: NodePath<ReturnStatement>[] = [];
+				(tryPath.get("block") as NodePath).traverse({
+					Function(innerPath) {
+						innerPath.skip();
+					},
+					ReturnStatement(returnPath) {
+						const argument = returnPath.node.argument;
+						// `return await x` already settles inside the try, so its rejection genuinely belongs
+						// to the local catch, and an awaited value is never a pending thenable. Literals can
+						// never be thenables either. Stashing those would cost the `_await(_catch(...))`
+						// fusion for no benefit.
+						if (
+							argument &&
+							!skipNodeSet.has(returnPath.node) &&
+							!types.isAwaitExpression(argument) &&
+							!types.isLiteral(argument)
+						) {
+							stashablePaths.push(returnPath);
+						}
+					},
+				});
+				if (stashablePaths.length === 0) {
+					return;
+				}
+				const returnedIdentifier = tryPath.scope.generateUidIdentifier("returned");
+				const returnValueIdentifier = tryPath.scope.generateUidIdentifier("returnValue");
+				tryPath.scope.push({ kind: "let", id: returnedIdentifier });
+				tryPath.scope.push({ kind: "let", id: returnValueIdentifier });
+				tryReturnStash.set(tryPath.node, { returnedIdentifier, returnValueIdentifier });
+				for (const returnPath of stashablePaths) {
+					returnPath.replaceWithMultiple([
+						types.expressionStatement(
+							types.assignmentExpression("=", returnValueIdentifier, returnPath.node.argument!)
+						),
+						types.expressionStatement(
+							types.assignmentExpression("=", returnedIdentifier, booleanLiteral(true, minify))
+						),
+						types.returnStatement(),
+					]);
+				}
+			},
+		});
 	}
 
 	// Rewrite an async node to be explicitly managed continuations split at async expressions
@@ -3521,6 +3590,9 @@ export default function ({
 					explicitExits.any && !explicitExits.all ? exitIdentifier : undefined,
 					breakIdentifiers
 				);
+				const returnStash = tryReturnStash.get(parent.node);
+				const returnedIdentifier = returnStash !== undefined ? returnStash.returnedIdentifier : undefined;
+				const returnValueIdentifier = returnStash !== undefined ? returnStash.returnValueIdentifier : undefined;
 				let expression: Expression | Statement = rewriteAsyncNode(
 					state.generatorState,
 					parent,
@@ -3611,6 +3683,30 @@ export default function ({
 							additionalConstantNames
 						),
 						rewritten,
+					]);
+				}
+				if (returnedIdentifier !== undefined && returnValueIdentifier !== undefined) {
+					// Outside `_catch` (and any `_finally`), so returning the raw value here lets the async
+					// function's own resolution settle it -- with no handler left to swallow a rejection.
+					const settledIdentifier = path.scope.generateUidIdentifier("settled");
+					expression = types.callExpression(helperReference(pluginState, path, "_continue"), [
+						types.isExpression(expression)
+							? expression
+							: types.callExpression(functionize(pluginState, [], expression, targetPath), []),
+						functionize(
+							pluginState,
+							[settledIdentifier],
+							types.blockStatement([
+								types.returnStatement(
+									types.conditionalExpression(
+										returnedIdentifier,
+										returnValueIdentifier,
+										settledIdentifier
+									)
+								),
+							]),
+							targetPath
+						),
 					]);
 				}
 				relocateTail(
@@ -4702,8 +4798,7 @@ export default function ({
 	}
 
 	// Visitor to rewrite the top level return expressions of an async function
-	const rewriteTopLevelReturnsVisitor: Visitor<{
-	}> = {
+	const rewriteTopLevelReturnsVisitor: Visitor<{}> = {
 		Function: skipNode,
 		ReturnStatement(path) {
 			const argument = path.get("argument");
@@ -5076,6 +5171,7 @@ export default function ({
 							Error
 						);
 					}
+					stashTryBlockReturns(this, bodyPath);
 					rewriteAsyncBlock({ state: this, generatorIdentifier }, bodyPath, []);
 					generatorBinding.path.remove();
 					path.replaceWith(
@@ -5090,6 +5186,7 @@ export default function ({
 						)
 					);
 				} else {
+					stashTryBlockReturns(this, path);
 					rewriteAsyncBlock({ state: this }, path, []);
 					const inlineHelpers = readConfigKey(this.opts, "inlineHelpers");
 					const canThrow = checkForErrorsAndRewriteReturns(
@@ -5213,6 +5310,7 @@ export default function ({
 								Error
 							);
 						}
+						stashTryBlockReturns(this, target);
 						rewriteAsyncBlock({ state: this, generatorIdentifier }, target, []);
 						generatorBinding.path.remove();
 						target.replaceWith(
@@ -5225,6 +5323,7 @@ export default function ({
 					} else {
 						const inlineHelpers = readConfigKey(this.opts, "inlineHelpers");
 						rewriteThisArgumentsAndHoistFunctions(target, inlineHelpers ? target : body, true);
+						stashTryBlockReturns(this, target);
 						rewriteAsyncBlock({ state: this }, target, []);
 						const statements = target.get("body");
 						const lastStatement = statements[statements.length - 1];

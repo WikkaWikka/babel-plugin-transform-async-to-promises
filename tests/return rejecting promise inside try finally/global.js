@@ -1,0 +1,1 @@
+__GLOBAL_ASYNC_TO_PROMISES__._async(function(rejectingThenable,log){return __GLOBAL_ASYNC_TO_PROMISES__._finallyRethrows(function(){return __GLOBAL_ASYNC_TO_PROMISES__._await(Promise.resolve(),function(){return rejectingThenable();});},function(_wasThrown,_result){log.push('finally');return __GLOBAL_ASYNC_TO_PROMISES__._rethrow(_wasThrown,_result);});})
