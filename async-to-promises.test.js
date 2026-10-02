@@ -1,4 +1,5 @@
 const asyncToPromises = require("./async-to-promises");
+const { _Pact, _settle } = require("./helpers");
 const fs = require("fs");
 
 const checkTestCases = true;
@@ -170,6 +171,121 @@ function writeOutput(name, myCode, outputCode) {
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
+function createSettledPact(state, value) {
+	const pact = new _Pact();
+	_settle(pact, state, value);
+	return pact;
+}
+
+describe("_Pact Promise compatibility", () => {
+	test("catch handles rejection", async () => {
+		const reason = new Error("rejected");
+
+		const result = await createSettledPact(2, reason).catch((error) => error.message);
+
+		expect(result).toBe("rejected");
+	});
+
+	test("catch preserves fulfillment", async () => {
+		const value = { status: "fulfilled" };
+		const onRejected = jest.fn();
+
+		const result = await createSettledPact(1, value).catch(onRejected);
+
+		expect(result).toBe(value);
+		expect(onRejected).not.toHaveBeenCalled();
+	});
+
+	test("catch rejects with a thrown handler error", async () => {
+		const handlerError = new Error("handler failed");
+		const result = createSettledPact(2, new Error("original rejection")).catch(() => {
+			throw handlerError;
+		});
+
+		await expect(result).rejects.toBe(handlerError);
+	});
+
+	test("finally runs and preserves fulfillment", async () => {
+		const calls = [];
+		const value = { status: "fulfilled" };
+
+		const result = await createSettledPact(1, value).finally(() => calls.push("finally"));
+
+		expect(result).toBe(value);
+		expect(calls).toEqual(["finally"]);
+	});
+
+	test("finally runs and preserves rejection", async () => {
+		const calls = [];
+		const reason = new Error("original rejection");
+		const result = createSettledPact(2, reason).finally(() => calls.push("finally"));
+
+		await expect(result).rejects.toBe(reason);
+		expect(calls).toEqual(["finally"]);
+	});
+
+	test("finally awaits a returned Promise before preserving rejection", async () => {
+		const reason = new Error("original rejection");
+		let resolveFinalizer;
+		const finalizer = new Promise((resolve) => {
+			resolveFinalizer = resolve;
+		});
+		const result = createSettledPact(2, reason).finally(() => finalizer);
+
+		expect(result.s).toBe(undefined);
+		resolveFinalizer();
+		await expect(result).rejects.toBe(reason);
+	});
+
+	test("finally invokes its callback exactly once without arguments", async () => {
+		const invocationArguments = [];
+		const result = createSettledPact(1, "fulfilled").finally(function () {
+			invocationArguments.push(Array.from(arguments));
+		});
+
+		await expect(result).resolves.toBe("fulfilled");
+		expect(invocationArguments).toEqual([[]]);
+	});
+
+	test("finally awaits a returned Promise", async () => {
+		const events = [];
+		const result = createSettledPact(1, "fulfilled")
+			.finally(() => Promise.resolve().then(() => events.push("finalized")))
+			.then((value) => {
+				events.push(value);
+				return value;
+			});
+
+		await expect(result).resolves.toBe("fulfilled");
+		expect(events).toEqual(["finalized", "fulfilled"]);
+	});
+
+	test("finally uses a thrown finalizer error", async () => {
+		const finalizerError = new Error("finalizer failed");
+		const result = createSettledPact(1, "fulfilled").finally(() => {
+			throw finalizerError;
+		});
+
+		await expect(result).rejects.toBe(finalizerError);
+	});
+
+	test("finally uses a rejected finalizer reason", async () => {
+		const originalReason = new Error("original rejection");
+		const finalizerReason = new Error("finalizer rejection");
+		const result = createSettledPact(2, originalReason).finally(() => Promise.reject(finalizerReason));
+
+		await expect(result).rejects.toBe(finalizerReason);
+	});
+
+	test("non-function callbacks are transparent", async () => {
+		const value = { status: "fulfilled" };
+		const reason = new Error("rejected");
+
+		await expect(createSettledPact(1, value).catch("ignored").finally(null)).resolves.toBe(value);
+		await expect(createSettledPact(2, reason).catch("ignored").finally(null)).rejects.toBe(reason);
+	});
+});
+
 function readTest(name) {
 	let input;
 	let output;
@@ -287,15 +403,15 @@ for (const babelName of Object.keys(environments)) {
 		});
 	});
 	describe("optIn", () => {
-		const withoutDirectiveInput = 'async function test(){return 42;}';
+		const withoutDirectiveInput = "async function test(){return 42;}";
 		const optInDirective = '"use transform-async-to-promises";\n';
 		// Test that the opt-in directive works correctly
 		test("should not transform code without opt-in", () => {
-		const notOptInAst = parse(babel, withoutDirectiveInput);
-		const notOptInResult = babel.transformFromAst(notOptInAst, withoutDirectiveInput, {
-			plugins: [[pluginUnderTest, { optIn: true }]],
-			compact: true,
-		});
+			const notOptInAst = parse(babel, withoutDirectiveInput);
+			const notOptInResult = babel.transformFromAst(notOptInAst, withoutDirectiveInput, {
+				plugins: [[pluginUnderTest, { optIn: true }]],
+				compact: true,
+			});
 			expect(notOptInResult.code).toBe(withoutDirectiveInput);
 		});
 		test("should transform code with opt-in", () => {
@@ -459,7 +575,7 @@ for (const babelName of Object.keys(environments)) {
 									const code = globalResult.code;
 									const combined = `/* ${name} global */
 											(function(exports){ ${globalRuntime.code} })({});
-											${code}`
+											${code}`;
 									try {
 										globalFn = new Function(combined);
 									} catch (e) {

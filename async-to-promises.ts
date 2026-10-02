@@ -4702,8 +4702,7 @@ export default function ({
 	}
 
 	// Visitor to rewrite the top level return expressions of an async function
-	const rewriteTopLevelReturnsVisitor: Visitor<{
-	}> = {
+	const rewriteTopLevelReturnsVisitor: Visitor<{}> = {
 		Function: skipNode,
 		ReturnStatement(path) {
 			const argument = path.get("argument");

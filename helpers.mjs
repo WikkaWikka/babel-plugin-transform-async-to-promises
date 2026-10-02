@@ -32,7 +32,34 @@ export const _Pact = /*#__PURE__*/(function() {
 			}
 		};
 		return result;
-	}
+	};
+	_Pact.prototype.catch = function(onRejected) {
+		return this.then(undefined, typeof onRejected === "function" ? onRejected : undefined);
+	};
+	_Pact.prototype.finally = function(onFinally) {
+		if (typeof onFinally !== "function") {
+			return this.then(
+				function(value) {
+					return value;
+				},
+				function(reason) {
+					throw reason;
+				}
+			);
+		}
+		return this.then(
+			function(value) {
+				return Promise.resolve(onFinally()).then(function() {
+					return value;
+				});
+			},
+			function(reason) {
+				return Promise.resolve(onFinally()).then(function() {
+					throw reason;
+				});
+			}
+		);
+	};
 	return _Pact;
 })();
 
